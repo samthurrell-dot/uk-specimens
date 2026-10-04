@@ -19,6 +19,12 @@ Records published to GBIF by UK-based organisations that are preserved specimens
 samples. The DiSSCo UK portal also requires each publisher to have a GRSciColl collection entry, so its numbers
 can differ a little. Counts change as museums publish more records.
 
+### No-server version (docs/index.html)
+
+A single self-contained HTML file that asks GBIF directly from the browser and keeps progress and scores on the
+device. No leaderboard, but it can run from a downloaded file or from GitHub Pages (Settings → Pages → main, /docs),
+which costs no Netlify credits. Rebuild it after changing the species list or styles with `npm run build:static`.
+
 ### Testing locally
 
 ```
