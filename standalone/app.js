@@ -357,7 +357,22 @@ async function checkView() {
   $("#out").innerHTML = `<p class="rank">UK specimen ${n("uk")} · Elsewhere ${n("world")} · Living ${n("living")} · None ${n("none")}${n("no name match") ? ` · No match ${n("no name match")}` : ""}${n("error") ? ` · Errors ${n("error")}` : ""}</p>
     <div class="row"><button class="btn" type="button" id="copy">Copy report</button></div>
     <p class="small muted">Paste the report into the chat with Claude.</p>
+    <h2 style="font-size:24px;margin-top:8px;">Check the photos by eye</h2>
+    <p class="small">Tap any photo that isn't a specimen (paperwork, a label, a blank tray). Then copy the list and paste it to Claude, and those photos will be skipped for everyone.</p>
+    <div class="gallery">${rows.filter((r) => r.url).map((r) => `<button type="button" class="gitem" data-url="${esc(r.url)}" data-name="${esc(r.name)}" aria-pressed="false">
+      <img src="${esc(thumbUrl(r.url, 300))}" data-orig="${esc(r.url.replace(/^http:/, "https:"))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.orig){this.src=this.dataset.orig;this.dataset.orig=''}else{this.replaceWith(Object.assign(document.createElement('span'),{className:'gfail',textContent:'Didn\\'t load'}))}">
+      <span>${esc(r.name)}${r.result !== "uk" ? ` · ${esc(r.result)}` : ""}</span></button>`).join("")}</div>
+    <div class="row"><button class="btn" type="button" id="copybad">Copy list of bad photos (<span id="nbad">0</span>)</button></div>
     <ol class="bars">${rows.map((r, k) => `<li><span class="rk">${k + 1}</span><span class="nm">${esc(r.name)}<small>${esc(fmtLog(r.log) || r.result)}</small></span><span class="ct">${esc(r.result)}</span></li>`).join("")}</ol>`;
+  app.querySelectorAll(".gitem").forEach((b) => (b.onclick = () => {
+    b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
+    $("#nbad").textContent = app.querySelectorAll('.gitem[aria-pressed="true"]').length;
+  }));
+  $("#copybad").onclick = async () => {
+    const bad = [...app.querySelectorAll('.gitem[aria-pressed="true"]')].map((b) => `${b.dataset.name}: ${b.dataset.url}`);
+    if (!bad.length) return toast("Tap the bad photos first");
+    try { await navigator.clipboard.writeText("Bad photos:\n" + bad.join("\n")); toast("List copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); }
+  };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Report copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); } };
   // clear cached photos so the game picks up the new ones
   SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp2.${sci}`); } catch {} });

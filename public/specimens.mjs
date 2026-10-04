@@ -204,17 +204,22 @@ export async function fetchJSON(url, { timeout = 12000, tries = 3 } = {}) {
   throw last;
 }
 
+const BACKBONE = "d7dddbf4-2cf0-4f39-9b2a-bb099caae36c"; // GBIF's main checklist of names
+
 // Turn a scientific name into a GBIF taxon key. Tries a strict match first; if that finds nothing, a looser
 // match is accepted only when GBIF's name is exactly ours, so a typo can't count a whole genus or family instead.
 export async function matchTaxon(getJSON, name, rank = "species") {
   const R = rank.toUpperCase(), base = `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(name)}&rank=${R}`;
   const ok = (m) => m && m.usageKey && m.matchType !== "NONE" && m.matchType !== "HIGHERRANK" && (!m.rank || m.rank === R);
   let m = await getJSON(base + "&strict=true");
-  if (!ok(m)) {
-    m = await getJSON(base);
-    if (!ok(m) || String(m.canonicalName || "").toLowerCase() !== name.toLowerCase()) return null;
-  }
-  return m.acceptedUsageKey || m.usageKey;
+  if (ok(m)) return m.acceptedUsageKey || m.usageKey;
+  m = await getJSON(base);
+  if (ok(m) && String(m.canonicalName || "").toLowerCase() === name.toLowerCase()) return m.acceptedUsageKey || m.usageKey;
+  // last try: list every name in GBIF's main checklist spelled exactly like ours and take the accepted one
+  const list = await getJSON(`https://api.gbif.org/v1/species?name=${encodeURIComponent(name)}&datasetKey=${BACKBONE}&limit=20`);
+  const hit = (list.results || []).find((u) => u.rank === R && String(u.canonicalName || "").toLowerCase() === name.toLowerCase() && u.taxonomicStatus === "ACCEPTED")
+    || (list.results || []).find((u) => u.rank === R && String(u.canonicalName || "").toLowerCase() === name.toLowerCase());
+  return hit ? hit.acceptedKey || hit.key : null;
 }
 
 // ---- choosing a photo ----
@@ -233,6 +238,11 @@ export function licenceOf(l = "") {
   return m ? "CC " + (m[1] || m[2]).toUpperCase() : null;
 }
 
+// Photos checked by eye and found not to be specimens (from the gallery on the photo check page).
+// Add the image addresses here and they'll be skipped for everyone.
+export const BAD_PHOTOS = new Set([
+]);
+
 // Look through a page of GBIF results and pick the first usable photo, counting why others were skipped.
 export function examine(results = []) {
   const tally = { seen: 0, paperwork: 0, licence: 0, other: 0 };
@@ -245,6 +255,7 @@ export function examine(results = []) {
       const url = m.identifier || "", lic = licenceOf(m.license || o.license || "");
       if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) { tally.other++; continue; }
       if (!lic) { tally.licence++; continue; }
+      if (BAD_PHOTOS.has(url)) { tally.paperwork++; continue; }
       if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) { tally.paperwork++; continue; }
       const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
       photo = { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" };

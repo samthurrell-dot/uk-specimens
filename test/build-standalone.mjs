@@ -30,6 +30,11 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .learn ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;}
 .pic{position:relative;}
 .pic .tag{position:absolute;left:8px;top:8px;background:var(--paper);color:var(--ink);font-size:12px;font-weight:700;padding:2px 8px;border:1px solid var(--line-strong);}
+.gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+.gitem{display:flex;flex-direction:column;gap:4px;padding:4px;border:1px solid var(--line);background:var(--raised);color:var(--ink);text-align:left;cursor:pointer;font-size:11px;line-height:1.25;}
+.gitem img,.gitem .gfail{width:100%;aspect-ratio:1;object-fit:cover;background:var(--sunk);display:flex;align-items:center;justify-content:center;color:var(--ink-muted);}
+.gitem[aria-pressed="true"]{outline:3px solid var(--bad);outline-offset:-3px;}
+.gitem[aria-pressed="true"] span::before{content:"✕ ";color:var(--bad);font-weight:700;}
 .learn .lede{font-family:var(--serif);font-size:20px;color:var(--ink-soft);}
 </style>`;
 const base = page.slice(0, page.indexOf("<body>"));
