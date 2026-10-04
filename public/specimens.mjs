@@ -180,3 +180,25 @@ export const ratio = (a, b) => {
   if (r < 2) return `about ${Math.round((r - 1) * 100)}% more than`;
   return `about ${fmt(Math.round(r))} times as many as`;
 };
+
+// ---- choosing a specimen photo ----
+// Many museum images are of paperwork (accession registers, index cards, labels) rather than the specimen.
+// GBIF doesn't say which is which, so this skips any image whose title, description or file name suggests a document.
+// It's a word filter, so some paperwork will still get through and a few good photos may be skipped.
+export const PAPERWORK = /regist|ledger|accession|catalog|index ?card|card ?index|\bcards?\b|\blabels?\b|notebook|letter|\bpage\b|journal|archive|document|manuscript|\bscan of\b|slip|correspondence|\bbook\b|\bfolio\b|handwrit/i;
+const okLicence = (l = "") => /publicdomain\/zero|licenses\/by\/|licenses\/by-nc\/|^CC0|^CC_BY(_NC)?(_|$)/i.test(l);
+const licenceLabel = (l = "") => (/zero|CC0/i.test(l) ? "CC0" : /by-nc|BY_NC/i.test(l) ? "CC BY-NC" : "CC BY");
+export function pickPhoto(results = []) {
+  for (const o of results) {
+    for (const m of o.media || []) {
+      const url = m.identifier || "", lic = m.license || o.license || "";
+      if (m.type !== "StillImage" || !/^https:\/\//.test(url) || !okLicence(lic)) continue;
+      if (m.format && !/^image\//i.test(m.format)) continue;
+      if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) continue;
+      const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || "the publishing museum";
+      return { url, credit: String(who).slice(0, 80), licence: licenceLabel(lic), occurrence: o.key };
+    }
+  }
+  return null;
+}
+export const PHOTO_QUERY = "limit=20&mediaType=StillImage";
