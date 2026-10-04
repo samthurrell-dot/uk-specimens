@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>More or less?</title>
+<meta name="description" content="A daily game about Britain's museum collections. Does the next species have more or fewer specimens in UK collections?">
+<meta property="og:title" content="More or less? A daily UK specimens game">
+<meta property="og:description" content="Does the next species have more or fewer specimens in UK museum collections? Ten guesses a day.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Crect width='10' height='30' fill='%23007190'/%3E%3Crect x='10' width='10' height='30' fill='%23437742'/%3E%3Crect x='20' width='10' height='30' fill='%23ae5224'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#faf5e1; --raised:#fffdf6; --sunk:#efe8cf; --line:#d9d3bb; --line-strong:#547076;
+  --ink:#111314; --ink-soft:#34454c; --ink-muted:#4f6a70; --accent:#12354e; --on-accent:#ffefae;
+  --good:#2f6331; --bad:#a62c37; --mark:#bb7125;
+  --serif:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",Georgia,serif;
+  --sans:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --paper:#111314; --raised:#1d2225; --sunk:#171b1d; --line:#2c373c; --line-strong:#6b8a91;
+  --ink:#f5ecc2; --ink-soft:#b6bfc1; --ink-muted:#a1a39a; --accent:#97acc8; --on-accent:#111314; --good:#96d1aa; --bad:#f58e84; --mark:#eeb480;}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --paper:#111314; --raised:#1d2225; --sunk:#171b1d; --line:#2c373c; --line-strong:#6b8a91;
+  --ink:#f5ecc2; --ink-soft:#b6bfc1; --ink-muted:#a1a39a; --accent:#97acc8; --on-accent:#111314; --good:#96d1aa; --bad:#f58e84; --mark:#eeb480;}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+.wrap{max-width:560px;margin:0 auto;padding:12px 16px 48px;display:flex;flex-direction:column;gap:18px;}
+h1,h2,h3{font-family:var(--serif);font-weight:800;margin:0;text-wrap:balance;}
+p{margin:0;}
+a{color:var(--ink);}
+.label{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted);}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+.muted{color:var(--ink-muted);}
+.small{font-size:14px;}
+button{font:inherit;}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.btn{min-height:52px;padding:0 20px;border:0;border-radius:2px;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:17px;cursor:pointer;}
+.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line-strong);}
+.btn[disabled]{opacity:.45;cursor:not-allowed;}
+.row{display:flex;gap:10px;flex-wrap:wrap;}
+.row > .btn{flex:1;}
+
+.appbar{display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.brand{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);font-weight:700;font-size:15px;min-height:44px;}
+.dots{display:flex;gap:3px;} .dots i{width:12px;height:12px;display:block;}
+.link{background:none;border:0;color:var(--ink);font-weight:700;font-size:15px;min-height:44px;padding:0 6px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+
+/* start */
+.hero{display:flex;flex-direction:column;gap:14px;}
+.hero h1{font-size:clamp(44px,13vw,72px);line-height:.95;letter-spacing:-.01em;}
+.hero h1 em{font-style:normal;display:inline-block;padding:0 .12em;background:var(--mark);color:#111314;}
+.strip{display:flex;height:14px;} .strip span{flex:1;}
+.rules{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;color:var(--ink-soft);font-size:16px;}
+.namebox{display:flex;flex-direction:column;gap:6px;}
+.namebox input{height:52px;border:1px solid var(--line-strong);border-radius:2px;background:var(--raised);color:var(--ink);font-size:18px;padding:0 12px;}
+.note{padding:12px 14px;background:var(--raised);border:1px solid var(--line);font-size:15px;color:var(--ink-soft);}
+
+/* game */
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.pips{display:flex;gap:4px;flex:1;max-width:240px;}
+.pips i{flex:1;height:6px;background:var(--line);}
+.pips i.y{background:var(--good);} .pips i.n{background:var(--bad);} .pips i.now{background:var(--ink);}
+.card{background:var(--raised);border:1px solid var(--line);border-left-width:8px;display:flex;flex-direction:column;}
+.card .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px;}
+.group{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);}
+.group i{width:10px;height:10px;display:block;}
+.card h2{font-size:26px;line-height:1.15;}
+.sci{font-style:italic;color:var(--ink-soft);font-size:15px;}
+.count{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:34px;font-weight:500;line-height:1.1;}
+.count small{font-family:var(--sans);font-size:15px;font-weight:500;color:var(--ink-soft);margin-left:6px;}
+.count.hidden{color:var(--ink-muted);}
+.pic{background:var(--sunk);height:120px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-bottom:1px solid var(--line);}
+.pic img{width:100%;height:100%;object-fit:contain;display:block;}
+.pic.none{height:10px;}
+.credit{font-size:12px;color:var(--ink-muted);}
+.credit a{color:var(--ink-muted);}
+.vs{display:flex;align-items:center;gap:10px;color:var(--ink-muted);font-family:var(--serif);font-weight:700;font-size:15px;}
+.vs::before,.vs::after{content:"";flex:1;height:1px;background:var(--line);}
+.guess{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.verdict{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--line);background:var(--raised);}
+.verdict b{font-family:var(--serif);font-size:22px;}
+.verdict.good b{color:var(--good);} .verdict.bad b{color:var(--bad);}
+.fact{font-size:15px;color:var(--ink-soft);}
+
+/* results */
+.big{font-family:var(--serif);font-size:72px;line-height:1;font-weight:800;font-variant-numeric:tabular-nums;}
+.big small{font-size:28px;color:var(--ink-muted);}
+.grid{font-size:22px;letter-spacing:2px;}
+.rank{font-size:17px;padding:12px 14px;background:var(--raised);border:1px solid var(--line);}
+.chain{display:flex;flex-direction:column;}
+.chain li{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);}
+.chain ol{list-style:none;margin:0;padding:0;}
+.chain i{width:10px;height:28px;display:block;}
+.chain small{display:block;color:var(--ink-muted);font-size:13px;font-style:italic;}
+.chain .n{font-family:var(--mono);font-size:15px;text-align:right;}
+.chain .m{font-size:12px;display:block;text-align:right;}
+.tabs{display:flex;border-bottom:1px solid var(--line);gap:4px;}
+.tabs button{min-height:44px;padding:0 16px;border:0;border-bottom:3px solid transparent;background:none;color:var(--ink-soft);font-weight:700;font-size:15px;cursor:pointer;}
+.tabs button[aria-selected="true"]{border-bottom-color:var(--ink);color:var(--ink);}
+table.lb{width:100%;border-collapse:collapse;font-size:15px;}
+.lb th{text-align:left;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-muted);padding:8px 6px;border-bottom:2px solid var(--ink);}
+.lb td{padding:10px 6px;border-bottom:1px solid var(--line);}
+.lb td.num,.lb th.num{text-align:right;font-family:var(--mono);}
+.lb tr.me td{font-weight:700;background:var(--sunk);}
+details{font-size:15px;color:var(--ink-soft);}
+details summary{cursor:pointer;font-weight:700;color:var(--ink);min-height:40px;display:flex;align-items:center;}
+details p{margin-bottom:8px;}
+.foot{font-size:13px;color:var(--ink-muted);border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px;}
+.foot a{color:var(--ink-soft);}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:8px 14px;border-radius:2px;font-size:14px;}
+.err{padding:12px 14px;border:1px solid var(--bad);color:var(--bad);background:var(--raised);}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="appbar">
+    <a class="brand" href="/" aria-label="More or less? home"><span class="dots" id="dots" aria-hidden="true"></span>UK Specimens</a>
+    <button class="link" id="scoresBtn" type="button">Scores</button>
+  </header>
+
+  <main id="app" aria-live="polite">
+    <p class="muted">Loading today's specimens…</p>
+  </main>
+
+  <footer class="foot">
+    <p>Counts are records of preserved specimens, fossils and samples published to <a href="https://www.gbif.org/">GBIF</a> by UK organisations. This is close to, but not exactly, what the <a href="https://dissco-uk.org/">DiSSCo UK portal</a> shows, so treat the numbers as approximate. Each day's numbers are fixed when the puzzle is first opened.</p>
+    <p>Group colours are from Sanzo Wada's <i>A Dictionary of Color Combinations</i>; screen colours are approximate.</p>
+  </footer>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script type="module">
+import { GROUPS, ROUNDS, fmt, gridText, ratio } from "./specimens.mjs";
+
+const $ = (s) => document.querySelector(s);
+const app = $("#app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+function playerId() {
+  let id = store.get("uks.id");
+  if (!id || !/^[A-Za-z0-9-]{16,64}$/.test(id)) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""));
+    store.set("uks.id", id);
+  }
+  return id;
+}
+const ME = playerId();
+let state = null;      // response from /api/today
+let step = 0;          // which guess we're on
+let pending = null;    // result of the guess just made, before "Next"
+let busy = false;
+
+$("#dots").innerHTML = Object.values(GROUPS).slice(0, 4).map((g) => `<i style="background:${g.hex}"></i>`).join("");
+
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2400); }
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  let data = {}; try { data = await res.json(); } catch {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function load() {
+  const r = await api(`/api/today?me=${encodeURIComponent(ME)}`);
+  if (!r.ok) { app.innerHTML = `<p class="err">${esc(r.data.error || "Something went wrong loading today's puzzle.")}</p><div class="row"><button class="btn alt" type="button" id="retry">Try again</button></div>`; $("#retry").onclick = load; return; }
+  state = r.data;
+  step = state.progress.marks.length;
+  if (state.entry || step >= ROUNDS) return results();
+  if (step > 0) return game();
+  start();
+}
+
+/* ---------- start ---------- */
+function start() {
+  const name = store.get("uks.name") || "";
+  app.innerHTML = `
+  <section class="hero">
+    <p class="label">Daily · No. ${state.puzzle} · ${esc(state.date)}</p>
+    <h1>More or <em>less?</em></h1>
+    <div class="strip" aria-hidden="true">${Object.values(GROUPS).map((g) => `<span style="background:${g.hex}"></span>`).join("")}</div>
+    <p>UK museums hold millions of preserved specimens, from pressed daisies to dinosaur bones. Some species fill whole drawers. Others are almost never collected.</p>
+    <ul class="rules">
+      <li>You see a species and how many UK specimens there are.</li>
+      <li>Guess if the next one has <b>more</b> or <b>fewer</b>.</li>
+      <li>Ten guesses. One go a day. New puzzle at midnight UK time.</li>
+    </ul>
+    <label class="namebox"><span class="label">Your name for the scores</span>
+      <input id="name" maxlength="20" autocomplete="nickname" value="${esc(name)}" placeholder="e.g. Sam"></label>
+    <button class="btn" type="button" id="go">Start</button>
+  </section>`;
+  const go = () => {
+    const nm = $("#name").value.trim();
+    if (nm.length < 2) { toast("Choose a name of at least 2 letters"); $("#name").focus(); return; }
+    store.set("uks.name", nm); game();
+  };
+  $("#go").onclick = go;
+  $("#name").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+}
+
+/* ---------- game ---------- */
+function card(s, opts = {}) {
+  const g = GROUPS[s.group] || GROUPS.plant;
+  const pic = s.photo
+    ? `<div class="pic"><img src="${esc(s.photo.url)}" alt="Museum specimen of ${esc(s.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="const c=this.closest('.card');c.querySelector('.credit')?.remove();this.parentNode.className='pic none';this.remove();"></div>`
+    : `<div class="pic none" style="background:${g.hex}"></div>`;
+  const credit = s.photo ? `<p class="credit">Photo: ${esc(s.photo.credit)} · ${esc(s.photo.licence)} · <a href="https://www.gbif.org/occurrence/${encodeURIComponent(s.photo.occurrence)}" target="_blank" rel="noopener">record</a></p>` : "";
+  const count = s.count == null
+    ? `<p class="count hidden" aria-label="Unknown">?<small>specimens</small></p>`
+    : `<p class="count">${fmt(s.count)}<small>specimen${s.count === 1 ? "" : "s"}</small></p>`;
+  return `<article class="card" style="border-left-color:${g.hex}">
+    ${pic}
+    <div class="body">
+      <p class="group"><i style="background:${g.hex}"></i>${esc(g.label)}</p>
+      <h2>${esc(s.name)}</h2>
+      <p class="sci">${esc(s.sci)}</p>
+      ${count}
+      ${opts.fact ? `<p class="fact">${esc(s.fact)}</p>` : ""}
+      ${credit}
+    </div>
+  </article>`;
+}
+function pips() {
+  const m = state.progress.marks;
+  return Array.from({ length: ROUNDS }, (_, k) => `<i class="${k < m.length ? (m[k] ? "y" : "n") : k === step ? "now" : ""}"></i>`).join("");
+}
+function game() {
+  const a = state.species[step], b = state.species[step + 1];
+  let bottom;
+  if (pending) {
+    bottom = `<div class="verdict ${pending.right ? "good" : "bad"}">
+        <b>${pending.right ? "Right" : "Not this time"}</b>
+        <p>${esc(verdictText(a, b))}</p>
+      </div>
+      <button class="btn" type="button" id="next">${step + 1 >= ROUNDS ? "See your score" : "Next species"}</button>`;
+  } else {
+    bottom = `<div class="guess">
+        <button class="btn" type="button" data-g="more">More</button>
+        <button class="btn" type="button" data-g="fewer">Fewer</button>
+      </div>`;
+  }
+  app.innerHTML = `
+  <section style="display:flex;flex-direction:column;gap:14px;">
+    <div class="top"><p class="label">No. ${state.puzzle} · Guess ${step + 1} of ${ROUNDS}</p><div class="pips" aria-hidden="true">${pips()}</div></div>
+    ${card(a, { fact: true })}
+    <p class="vs">Does this have more or fewer?</p>
+    ${card(b, { fact: !!pending })}
+    ${bottom}
+  </section>`;
+  app.querySelectorAll("[data-g]").forEach((btn) => (btn.onclick = () => guess(btn.dataset.g)));
+  const nx = $("#next");
+  if (nx) { nx.onclick = () => { pending = null; step += 1; if (step >= ROUNDS) results(); else game(); window.scrollTo(0, 0); }; nx.focus({ preventScroll: true }); }
+}
+function verdictText(a, b) {
+  if (b.count === a.count) return `Exactly the same number as ${a.name}, so either answer counts.`;
+  return b.count > a.count ? `More. ${b.name} has ${ratio(a.count, b.count)} ${a.name}.` : `Fewer. ${a.name} has ${ratio(a.count, b.count)} ${b.name}.`;
+}
+async function guess(g) {
+  if (busy) return; busy = true;
+  app.querySelectorAll("[data-g]").forEach((b) => (b.disabled = true));
+  const r = await api("/api/play", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ playerId: ME, name: store.get("uks.name") || "", puzzle: state.puzzle, step, guess: g }) });
+  busy = false;
+  if (r.data.species) { state.species = r.data.species; state.progress = r.data.progress; }
+  if (!r.ok) {
+    if (r.status === 409) { step = state.progress.marks.length; toast("That guess was already made"); return step >= ROUNDS ? results() : game(); }
+    toast(r.data.error || "That guess didn't go through. Try again."); return game();
+  }
+  pending = { right: r.data.right };
+  if (r.data.entry) { state.entry = r.data.entry; state.rank = r.data.rank; state.of = r.data.of; }
+  game();
+}
+
+/* ---------- results ---------- */
+const ordinal = (n) => { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+async function results() {
+  if (!state.entry) { const r = await api(`/api/today?me=${encodeURIComponent(ME)}`); if (r.ok) state = { ...state, ...r.data }; }
+  const e = state.entry || { score: state.progress.marks.reduce((a, b) => a + b, 0), marks: state.progress.marks };
+  const sp = state.species, marks = e.marks || [];
+  const msg = e.score >= 9 ? "Curator material." : e.score >= 7 ? "A sharp eye for the stores." : e.score >= 5 ? "Not bad at all." : "The drawers are full of surprises.";
+  app.innerHTML = `
+  <section style="display:flex;flex-direction:column;gap:16px;">
+    <p class="label">No. ${state.puzzle} · ${esc(state.date)}</p>
+    <p class="big">${e.score}<small> / ${ROUNDS}</small></p>
+    <p style="font-family:var(--serif);font-size:22px;">${msg}</p>
+    <p class="grid" aria-label="${e.score} right out of ${ROUNDS}">${gridText(marks)}</p>
+    ${state.rank ? `<p class="rank">You're <b>${ordinal(state.rank)}</b> of ${state.of} today.</p>` : ""}
+    <div class="row"><button class="btn" type="button" id="share">Share result</button><button class="btn alt" type="button" id="lbBtn">Scores</button></div>
+    <div class="chain"><h3 style="font-size:20px;margin-bottom:6px;">Today's specimens</h3><ol>
+      ${sp.map((s, k) => `<li><i style="background:${(GROUPS[s.group] || GROUPS.plant).hex}"></i>
+        <span><a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.name)}</a><small>${esc(s.sci)}</small></span>
+        <span><span class="n">${s.count == null ? "?" : fmt(s.count)}</span>${k > 0 ? `<span class="m" style="color:var(${marks[k - 1] ? "--good" : "--bad"})">${marks[k - 1] ? "Right" : "Wrong"}</span>` : ""}</span></li>`).join("")}
+    </ol></div>
+    <p class="small muted">Names link to the records on GBIF, where you can see where and when each specimen was collected.</p>
+    <p class="small muted">Come back after midnight (UK time) for a new set.</p>
+  </section>`;
+  $("#share").onclick = share;
+  $("#lbBtn").onclick = () => leaderboard("day");
+}
+async function share() {
+  const e = state.entry || {};
+  const text = `More or less? No. ${state.puzzle}\n${gridText(e.marks || state.progress.marks)} ${e.score ?? ""}/${ROUNDS}\n${location.origin}`;
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch (err) { if (err && err.name === "AbortError") return; }
+  try { await navigator.clipboard.writeText(text); toast("Copied to clipboard"); } catch { toast("Couldn't copy, sorry"); }
+}
+
+/* ---------- leaderboard ---------- */
+async function leaderboard(scope) {
+  const back = state && (state.entry || step >= ROUNDS) ? results : state && step > 0 ? game : start;
+  app.innerHTML = `<section style="display:flex;flex-direction:column;gap:14px;">
+    <h2 style="font-size:30px;">Scores</h2>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="${scope === "day"}" data-s="day" type="button">Today</button>
+      <button role="tab" aria-selected="${scope === "all"}" data-s="all" type="button">All time</button>
+    </div>
+    <div id="lb"><p class="muted">Loading…</p></div>
+    <button class="btn alt" type="button" id="back">Back</button>
+  </section>`;
+  app.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => leaderboard(b.dataset.s)));
+  $("#back").onclick = () => (state ? back() : load());
+  const r = await api(`/api/leaderboard?scope=${scope}&me=${encodeURIComponent(ME)}`);
+  const box = $("#lb"); if (!box) return;
+  if (!r.ok) { box.innerHTML = `<p class="err">The scores couldn't be loaded.</p>`; return; }
+  const d = r.data;
+  if (!d.rows.length) { box.innerHTML = `<p class="muted">${scope === "day" ? "No one has finished today's puzzle yet." : "No scores yet."}</p>`; return; }
+  box.innerHTML = scope === "day"
+    ? `<table class="lb"><thead><tr><th>#</th><th>Name</th><th class="num">Score</th></tr></thead><tbody>
+       ${d.rows.map((x) => `<tr class="${x.me ? "me" : ""}"><td>${x.rank}</td><td>${esc(x.name)}</td><td class="num">${x.score}/${ROUNDS}</td></tr>`).join("")}</tbody></table>
+       <p class="small muted" style="margin-top:8px;">${d.players} played today.</p>`
+    : `<table class="lb"><thead><tr><th>#</th><th>Name</th><th class="num">Total</th><th class="num">Days</th><th class="num">Streak</th></tr></thead><tbody>
+       ${d.rows.map((x) => `<tr class="${x.me ? "me" : ""}"><td>${x.rank}</td><td>${esc(x.name)}</td><td class="num">${x.total}</td><td class="num">${x.played}</td><td class="num">${x.streak}</td></tr>`).join("")}</tbody></table>`;
+}
+$("#scoresBtn").onclick = () => leaderboard("day");
+
+load();
+</script>
+</body>
+</html>
