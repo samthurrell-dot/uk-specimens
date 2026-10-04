@@ -181,24 +181,62 @@ export const ratio = (a, b) => {
   return `about ${fmt(Math.round(r))} times as many as`;
 };
 
-// ---- choosing a specimen photo ----
+// ---- choosing a photo ----
 // Many museum images are of paperwork (accession registers, index cards, labels) rather than the specimen.
 // GBIF doesn't say which is which, so this skips any image whose title, description or file name suggests a document.
 // It's a word filter, so some paperwork will still get through and a few good photos may be skipped.
 export const PAPERWORK = /regist|ledger|accession|catalog|index ?card|card ?index|\bcards?\b|\blabels?\b|notebook|letter|\bpage\b|journal|archive|document|manuscript|\bscan of\b|slip|correspondence|\bbook\b|\bfolio\b|handwrit/i;
-const okLicence = (l = "") => /publicdomain\/zero|licenses\/by\/|licenses\/by-nc\/|^CC0|^CC_BY(_NC)?(_|$)/i.test(l);
-const licenceLabel = (l = "") => (/zero|CC0/i.test(l) ? "CC0" : /by-nc|BY_NC/i.test(l) ? "CC BY-NC" : "CC BY");
-export function pickPhoto(results = []) {
+
+// Accepted: CC0, CC BY, CC BY-SA, CC BY-NC, CC BY-NC-SA. Not accepted: "no derivatives" licences (the photos are
+// resized) and anything without an open licence.
+export function licenceOf(l = "") {
+  const s = String(l).toLowerCase().replace(/_/g, "-");
+  if (/publicdomain\/zero|cc0|publicdomain\/mark|public domain/.test(s)) return "CC0";
+  if (/-nd|nd\//.test(s)) return null;
+  const m = s.match(/licenses\/(by(?:-nc)?(?:-sa)?)\/|cc-(by(?:-nc)?(?:-sa)?)(?:-|$)/);
+  return m ? "CC " + (m[1] || m[2]).toUpperCase() : null;
+}
+
+// Look through a page of GBIF results and pick the first usable photo, counting why others were skipped.
+export function examine(results = []) {
+  const tally = { seen: 0, paperwork: 0, licence: 0, other: 0 };
+  let photo = null;
   for (const o of results) {
     for (const m of o.media || []) {
-      const url = m.identifier || "", lic = m.license || o.license || "";
-      if (m.type !== "StillImage" || !/^https:\/\//.test(url) || !okLicence(lic)) continue;
-      if (m.format && !/^image\//i.test(m.format)) continue;
-      if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) continue;
-      const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || "the publishing museum";
-      return { url, credit: String(who).slice(0, 80), licence: licenceLabel(lic), occurrence: o.key };
+      if (m.type !== "StillImage") continue;
+      tally.seen++;
+      if (photo) continue;
+      const url = m.identifier || "", lic = licenceOf(m.license || o.license || "");
+      if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) { tally.other++; continue; }
+      if (!lic) { tally.licence++; continue; }
+      if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) { tally.paperwork++; continue; }
+      const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
+      photo = { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" };
     }
   }
-  return null;
+  return { photo, ...tally };
 }
-export const PHOTO_QUERY = "limit=20&mediaType=StillImage";
+
+// Where to look, in order: UK museum specimens, then museum specimens anywhere, then photos of living examples.
+const SPECIMEN_TYPES = "basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
+export const PHOTO_TIERS = [
+  { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}` },
+  { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES },
+  { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", skip: ["fossil"] },
+];
+// getJSON is passed in so the page and the server can share this. Returns { photo, log } where log says what each tier found.
+export async function findPhoto(getJSON, key, group) {
+  const log = [];
+  for (const t of PHOTO_TIERS) {
+    if (t.skip && t.skip.includes(group)) continue;
+    try {
+      const r = await getJSON(`https://api.gbif.org/v1/occurrence/search?limit=${t.kind === "living" ? 20 : 50}&mediaType=StillImage&taxonKey=${key}&${t.query}`);
+      const e = examine(r.results);
+      log.push({ kind: t.kind, ...e, photo: undefined, found: !!e.photo });
+      if (e.photo) return { photo: { ...e.photo, kind: t.kind }, log };
+    } catch (err) { log.push({ kind: t.kind, error: String(err && err.message || err) }); }
+  }
+  return { photo: null, log };
+}
+// GBIF's free image resizing service. If it fails, the page falls back to the original image.
+export const thumbUrl = (url, w = 600) => `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;

@@ -28,6 +28,8 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .bars .ct{font-family:var(--mono);font-size:15px;text-align:right;padding-top:1px;}
 .learn h2{font-size:24px;margin-top:6px;}
 .learn ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;}
+.pic{position:relative;}
+.pic .tag{position:absolute;left:8px;top:8px;background:var(--paper);color:var(--ink);font-size:12px;font-weight:700;padding:2px 8px;border:1px solid var(--line-strong);}
 .learn .lede{font-family:var(--serif);font-size:20px;color:var(--ink-soft);}
 </style>`;
 const base = page.slice(0, page.indexOf("<body>"));

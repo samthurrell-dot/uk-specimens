@@ -2,7 +2,7 @@
 // "UK specimens" here means: records published to GBIF by UK-based organisations that are preserved specimens,
 // fossil specimens or material samples. That's close to the DiSSCo UK portal's own rule, but not identical
 // (the portal also requires each publisher to have a GRSciColl collection entry), so counts are approximate.
-import { pickPhoto, PHOTO_QUERY } from "../../public/specimens.mjs";
+import { findPhoto } from "../../public/specimens.mjs";
 const API = "https://api.gbif.org/v1";
 const FILTER = "publishingCountry=GB&basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
 
@@ -26,10 +26,10 @@ export async function countFor(key) {
   return typeof r.count === "number" ? r.count : null;
 }
 
-// One openly licensed specimen photo (paperwork filtered out), with credit, or null.
-export async function photoFor(key) {
-  const r = await getJSON(`${API}/occurrence/search?${PHOTO_QUERY}&taxonKey=${key}&${FILTER}`);
-  return pickPhoto(r.results);
+// One openly licensed photo (paperwork filtered out), with credit, or null. Tries UK specimens, then specimens
+// anywhere, then living examples; photo.kind says which.
+export async function photoFor(key, group) {
+  return (await findPhoto(getJSON, key, group)).photo;
 }
 
 // Link to the same records on GBIF so players can explore them.

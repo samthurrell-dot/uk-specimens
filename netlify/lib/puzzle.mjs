@@ -30,8 +30,8 @@ async function lookup(store, i) {
     if (!key) return null;
     const count = await countFor(key);
     if (!count) return null;
-    const photo = await photoFor(key).catch(() => null);
     const [name, sci, group, fact] = SPECIES[i];
+    const photo = await photoFor(key, group).catch(() => null);
     // names are saved with the puzzle, so editing the species list later never changes a past day
     return { i, name, sci, group, fact, key, count, photo, link: gbifLink(key) };
   } catch (e) {
