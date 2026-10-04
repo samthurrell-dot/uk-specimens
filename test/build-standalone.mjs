@@ -35,6 +35,11 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .gitem img,.gitem .gfail{width:100%;aspect-ratio:1;object-fit:cover;background:var(--sunk);display:flex;align-items:center;justify-content:center;color:var(--ink-muted);}
 .gitem[aria-pressed="true"]{outline:3px solid var(--bad);outline-offset:-3px;}
 .gitem[aria-pressed="true"] span::before{content:"✕ ";color:var(--bad);font-weight:700;}
+.pickrow{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line);}
+.pickrow h3{font-size:18px;} .pickrow h3 small{font-family:var(--sans);font-size:13px;font-weight:400;font-style:italic;color:var(--ink-muted);}
+.pickrow .done{font-family:var(--sans);font-size:12px;font-weight:700;color:var(--good);}
+.gitem.pick[aria-pressed="true"]{outline:3px solid var(--good);}
+.gitem.pick[aria-pressed="true"] span::before{content:"✓ ";color:var(--good);}
 .learn .lede{font-family:var(--serif);font-size:20px;color:var(--ink-soft);}
 </style>`;
 const base = page.slice(0, page.indexOf("<body>"));

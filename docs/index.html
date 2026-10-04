@@ -146,6 +146,11 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .gitem img,.gitem .gfail{width:100%;aspect-ratio:1;object-fit:cover;background:var(--sunk);display:flex;align-items:center;justify-content:center;color:var(--ink-muted);}
 .gitem[aria-pressed="true"]{outline:3px solid var(--bad);outline-offset:-3px;}
 .gitem[aria-pressed="true"] span::before{content:"✕ ";color:var(--bad);font-weight:700;}
+.pickrow{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-bottom:1px solid var(--line);}
+.pickrow h3{font-size:18px;} .pickrow h3 small{font-family:var(--sans);font-size:13px;font-weight:400;font-style:italic;color:var(--ink-muted);}
+.pickrow .done{font-family:var(--sans);font-size:12px;font-weight:700;color:var(--good);}
+.gitem.pick[aria-pressed="true"]{outline:3px solid var(--good);}
+.gitem.pick[aria-pressed="true"] span::before{content:"✓ ";color:var(--good);}
 .learn .lede{font-family:var(--serif);font-size:20px;color:var(--ink-soft);}
 </style>
 </head>
@@ -409,55 +414,120 @@ function licenceOf(l = "") {
 // Photos checked by eye and found not to be specimens (from the gallery on the photo check page).
 // Add the image addresses here and they'll be skipped for everyone.
 const BAD_PHOTOS = new Set([
+  // checked 4 Oct 2026: paperwork, or upsetting photos of dead animals
+  "https://data.nhm.ac.uk/media/3d5c767b-2b93-41dc-88bf-86fbac5bd50d",
+  "https://data.nhm.ac.uk/media/28aadd55-63c6-4759-82bd-ab50d7f351b4",
+  "https://data.nhm.ac.uk/media/1b05128f-4f02-4b22-a19f-a8dcd7f4dfe4",
+  "https://data.nhm.ac.uk/media/8c18eb5f-a109-4084-bf27-4ece705c9965",
+  "https://data.nhm.ac.uk/media/8d7c2bdc-821c-4092-b4ea-5b81245f7d08",
+  "https://data.nhm.ac.uk/media/2eb1ac48-735f-4eed-9fd6-3912e3dd995c",
+  "https://caos.boldsystems.org/api/objects/caos-cloud.linode-us-east.13_191.8f600dd7-68cb-4ca7-b283-304c38846fed.jpg?subunit=1024.jpg",
+  "https://data.nhm.ac.uk/media/6dc830de-c3e4-42b6-9822-9ed609dee4e5",
+  "https://data.nhm.ac.uk/media/8cbdaf12-1f98-4a6d-bf68-760fc9a49a4c",
+  "https://data.nhm.ac.uk/media/310f2ca4-c465-4fe6-8a76-50ebe75387dd",
+  "https://data.nhm.ac.uk/media/6e963590-adc5-48b6-bcdb-0ab23aa7c177",
+  "https://bellatlas-images.s3.msi.umn.edu/SMM/Z2/Z2019_3_26_s_lg.jpg",
+  "https://data.nhm.ac.uk/media/eb62b8fa-f5fd-42d3-91bb-d2146ac4e411",
+  "https://biorepo.neonscience.org/media/NEON_MAMC-VSS/00000/B00000164938-1_1748039100_lg.jpg",
+  "https://medialib.naturalis.nl/file/id/RMNH.MAM.63914_preplog/format/large",
+  "https://assets-swiss.specifycloud.org/fileget?coll=mhng&type=O&filename=sp65750557384930612362.att.JPG",
+  "http://photos.gbif.fr/Bourges/PrepaZool/2020-10-1_face.JPG",
+  "https://data.nhm.ac.uk/media/aa4b064b-d2ce-4479-91f6-f0afd4ee50cc",
+  "https://data.nhm.ac.uk/media/01ff8cbc-d1fb-461a-9acb-2693ff9bb49f",
+  "https://data.nhm.ac.uk/media/c92f297f-beae-4cf0-9821-01391acc940b",
+  "https://data.nhm.ac.uk/media/2cc33323-a554-48e5-80d6-7b4666d484d1",
+  "https://data.nhm.ac.uk/media/857f299f-1f90-498d-b3dc-7e2078c8722b",
+  "https://data.nhm.ac.uk/media/08f26672-ea32-4206-95a4-774528ee2964",
+  "https://data.nhm.ac.uk/media/1b69f73f-d463-4d3f-89fc-1e2aad52ea13",
+  "https://data.nhm.ac.uk/media/a4a6b5dc-b5e7-46e0-b224-4d98923fe4e2",
+  "https://arter.dk/media/aef0f865-5eeb-48be-a276-e5fd9cdb61b1.jpg",
+  "https://data.nhm.ac.uk/media/c3d37040-e0cb-4e8d-b265-5146a61d8f76",
+  "https://data.nhm.ac.uk/media/31ef8427-cba6-4d4d-8a80-68c943343d85",
+  "https://data.nhm.ac.uk/media/461ccd79-3958-44aa-bd61-7aac1ea4afd6",
+  "https://data.nhm.ac.uk/media/9da6f288-df47-4029-99d1-dbbbbdebf3cb",
+  "https://data.nhm.ac.uk/media/03d91680-2f6a-422d-8d33-d67a3a570e07",
+  "https://data.nhm.ac.uk/media/6819f3c1-5c1f-4086-8249-4e994bda4265",
+  "https://data.nhm.ac.uk/media/971366f2-1a9a-4d9d-bdf7-36997d00afcb",
 ]);
 
-// Look through a page of GBIF results and pick the first usable photo, counting why others were skipped.
-function examine(results = []) {
-  const tally = { seen: 0, paperwork: 0, licence: 0, other: 0 };
-  let photo = null;
+// Photos chosen by hand in the photo picker (#pick). The game uses these first and doesn't search at all.
+// null means "no good photo: show the group colour".
+const PICKED = {
+};
+
+const usable = (o, m) => {
+  if (m.type !== "StillImage") return { why: "skip" };
+  const url = m.identifier || "", lic = licenceOf(m.license || o.license || "");
+  if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) return { why: "other" };
+  if (!lic) return { why: "licence" };
+  if (BAD_PHOTOS.has(url)) return { why: "paperwork" };
+  if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) return { why: "paperwork" };
+  const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
+  return { photo: { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" } };
+};
+
+// Look through a page of GBIF results and collect up to `max` usable photos, counting why others were skipped.
+function examine(results = [], max = 1) {
+  const tally = { seen: 0, paperwork: 0, licence: 0, other: 0 }, photos = [], seenOcc = new Set();
   for (const o of results) {
     for (const m of o.media || []) {
       if (m.type !== "StillImage") continue;
       tally.seen++;
-      if (photo) continue;
-      const url = m.identifier || "", lic = licenceOf(m.license || o.license || "");
-      if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) { tally.other++; continue; }
-      if (!lic) { tally.licence++; continue; }
-      if (BAD_PHOTOS.has(url)) { tally.paperwork++; continue; }
-      if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) { tally.paperwork++; continue; }
-      const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
-      photo = { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" };
+      if (photos.length >= max) continue;
+      const u = usable(o, m);
+      if (u.photo) { if (!seenOcc.has(o.key)) { photos.push(u.photo); seenOcc.add(o.key); } } else tally[u.why]++;
     }
   }
-  return { photo, ...tally };
+  return { photo: photos[0] || null, photos, ...tally };
 }
 
-// Where to look, in order: UK museum specimens, then museum specimens anywhere, then photos of living examples.
+// Where to look. Usually: UK museum specimens, then specimens anywhere, then photos of living examples.
+// Mammals, reptiles and amphibians look for living examples first, as preserved ones can be upsetting to look at.
 const SPECIMEN_TYPES = "basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
-const PHOTO_TIERS = [
-  { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}` },
-  { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES },
-  { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", skip: ["fossil"] },
-];
+const TIER = {
+  uk: { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}`, limit: 50 },
+  world: { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES, limit: 50 },
+  living: { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", limit: 20 },
+};
+const LIVING_FIRST = ["mammal", "herp"];
+const tiersFor = (group) =>
+  group === "fossil" ? [TIER.uk, TIER.world] : LIVING_FIRST.includes(group) ? [TIER.living, TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
+const PHOTO_TIERS = [TIER.uk, TIER.world, TIER.living];
+
+async function searchTier(getJSON, t, key, max) {
+  const url = `https://api.gbif.org/v1/occurrence/search?limit=${t.limit}&mediaType=StillImage&taxonKey=${key}&${t.query}`;
+  const r = await getJSON(url);
+  let e = examine(r.results, max);
+  // UK pages that were all paperwork: look one page further before giving up on UK photos
+  if (!e.photo && t.kind === "uk" && (r.results || []).length === t.limit && e.paperwork >= e.seen - e.other) {
+    const e2 = examine((await getJSON(url + `&offset=${t.limit}`)).results, max);
+    e = { photo: e2.photo, photos: e2.photos, seen: e.seen + e2.seen, paperwork: e.paperwork + e2.paperwork, licence: e.licence + e2.licence, other: e.other + e2.other };
+  }
+  return e;
+}
+
 // getJSON is passed in so the page and the server can share this. Returns { photo, log } where log says what each tier found.
-async function findPhoto(getJSON, key, group) {
+async function findPhoto(getJSON, key, group, sci) {
+  if (sci && Object.prototype.hasOwnProperty.call(PICKED, sci)) return { photo: PICKED[sci], log: [{ kind: "picked", found: !!PICKED[sci] }] };
   const log = [];
-  for (const t of PHOTO_TIERS) {
-    if (t.skip && t.skip.includes(group)) continue;
+  for (const t of tiersFor(group)) {
     try {
-      const limit = t.kind === "living" ? 20 : 50, url = `https://api.gbif.org/v1/occurrence/search?limit=${limit}&mediaType=StillImage&taxonKey=${key}&${t.query}`;
-      const r = await getJSON(url);
-      let e = examine(r.results);
-      // UK pages that were all paperwork: look one page further before giving up on UK photos
-      if (!e.photo && t.kind === "uk" && (r.results || []).length === limit && e.paperwork >= e.seen - e.other) {
-        const e2 = examine((await getJSON(url + `&offset=${limit}`)).results);
-        e = { photo: e2.photo, seen: e.seen + e2.seen, paperwork: e.paperwork + e2.paperwork, licence: e.licence + e2.licence, other: e.other + e2.other };
-      }
-      log.push({ kind: t.kind, ...e, photo: undefined, found: !!e.photo });
+      const e = await searchTier(getJSON, t, key, 1);
+      log.push({ kind: t.kind, seen: e.seen, paperwork: e.paperwork, licence: e.licence, other: e.other, found: !!e.photo });
       if (e.photo) return { photo: { ...e.photo, kind: t.kind }, log };
     } catch (err) { log.push({ kind: t.kind, error: String(err && err.message || err) }); }
   }
   return { photo: null, log };
+}
+
+// For the photo picker: up to 3 options from each place, in the same order as findPhoto, at most 6 in all.
+async function photoOptions(getJSON, key, group) {
+  const out = [];
+  for (const t of tiersFor(group)) {
+    if (out.length >= 6) break;
+    try { const e = await searchTier(getJSON, t, key, 3); e.photos.slice(0, 6 - out.length).forEach((p) => out.push({ ...p, kind: t.kind })); } catch {}
+  }
+  return out;
 }
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
 const thumbUrl = (url, w = 600) => `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
@@ -489,7 +559,7 @@ const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=$
 // Returns the species with its count, null if it has no records, or undefined if GBIF couldn't be reached.
 async function lookup(i, withPhoto = true) {
   const [name, sci, group, fact, rank] = SPECIES[i];
-  const ck = `uks.sp2.${sci}`, cached = local.get(ck);
+  const ck = `uks.sp3.${sci}`, cached = local.get(ck);
   if (cached && Date.now() - cached.t < WEEK && (!withPhoto || cached.photoChecked)) return cached.none ? null : { ...cached.v, i };
   try {
     const key = await matchName(sci, rank || "species");
@@ -498,7 +568,7 @@ async function lookup(i, withPhoto = true) {
     if (!c.count) { local.set(ck, { t: Date.now(), none: true, photoChecked: true }); return null; }
     let photo = cached && cached.v && cached.v.key === key ? cached.v.photo : null, photoChecked = false;
     if (withPhoto) {
-      try { photo = (await findPhoto(getJSON, key, group)).photo; photoChecked = true; } catch {}
+      try { photo = (await findPhoto(getJSON, key, group, sci)).photo; photoChecked = true; } catch {}
     }
     const v = { name, sci, group, fact, key, count: c.count, photo, link: recordsLink(key) };
     local.set(ck, { t: Date.now(), v, photoChecked });
@@ -543,7 +613,7 @@ function card(s, opts = {}) {
 // "Not a specimen?" hides that photo on this device and remembers it, so it can be fed back into the filter later
 function wireReports(root) {
   root.querySelectorAll("[data-report]").forEach((b) => (b.onclick = () => {
-    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp2.${sci}`);
+    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp3.${sci}`);
     bad[sci] = c && c.v && c.v.photo ? c.v.photo.url : true; local.set("uks.badphotos", bad);
     const art = b.closest(".card"); art.querySelector(".pic").className = "pic none"; art.querySelector(".pic").innerHTML = ""; b.closest(".credit").remove();
     toast("Thanks. That photo is hidden on this phone.");
@@ -579,7 +649,7 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
 let day = null, prog = null, step = 0, pending = null, started = false;
 
 async function buildDay(onProgress) {
-  const cached = local.get(`uks.day2.${puzzle}`);
+  const cached = local.get(`uks.day3.${puzzle}`);
   if (cached && cached.chain && cached.chain.length === ROUNDS + 1) return cached;
   const order = candidateOrder(puzzle), found = new Map();
   let failed = 0, tried = 0;
@@ -593,7 +663,7 @@ async function buildDay(onProgress) {
   const chain = buildChain(order, (i) => found.has(i));
   if (chain.length < ROUNDS + 1) throw new Error(failed === tried ? "unreachable" : "short");
   const d = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };
-  local.set(`uks.day2.${puzzle}`, d);
+  local.set(`uks.day3.${puzzle}`, d);
   return d;
 }
 async function play() {
@@ -701,11 +771,17 @@ function practiceTop() {
     `<button class="chip" type="button" data-cat="${k}" aria-pressed="${practice.group === k}">${k !== "all" ? `<i style="background:${GROUPS[k].hex}"></i>` : ""}${esc(l)}</button>`).join("")}</div>`;
 }
 async function practiceView() {
+  const token = (practice.token = (practice.token || 0) + 1); // a newer call (e.g. a category tap) wins
   if (!practice.a || !practice.b) {
     app.innerHTML = `<section class="stack"><h1 class="title">Practice</h1>${practiceTop()}<p class="muted">Finding two specimens…</p></section>`;
     wireChips();
-    try { practice.a = practice.a || (await drawSpecies([])); practice.b = await drawSpecies([practice.a.i]); }
-    catch (e) { return errorBox(e.message, practiceView); }
+    try {
+      const a = practice.a || (await drawSpecies([]));
+      if (token !== practice.token) return;
+      const b = await drawSpecies([a.i]);
+      if (token !== practice.token) return;
+      practice.a = a; practice.b = b;
+    } catch (e) { if (token === practice.token) errorBox(e.message, practiceView); return; }
     if (route() !== "practice") return;
   }
   pairView({ label: `Practice · Run of ${practice.run} · Best ${practice.best}`, a: practice.a, b: practice.b, pending: practice.pending, nextLabel: "Next pair" });
@@ -787,8 +863,8 @@ function learnView() {
     <p>Most specimens are kept in stores rather than on display, but museums near Manchester show some of their collections, including <a href="https://www.museum.manchester.ac.uk/" target="_blank" rel="noopener">Manchester Museum</a> and <a href="https://www.liverpoolmuseums.org.uk/world-museum" target="_blank" rel="noopener">World Museum Liverpool</a>. The <a href="https://www.nhm.ac.uk/" target="_blank" rel="noopener">Natural History Museum</a> in London holds the UK's largest collection.</p>
     <h2>About the photos</h2>
     <p>Photos come from the museums' own records. Some museums photograph paperwork, like old registers and labels, as well as specimens. The game tries to skip those by checking each photo's description, but some will still slip through. If you spot one, tap "Not a specimen?" and it'll be hidden on your phone.</p>
-    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". If there's no specimen photo anywhere, it shows a photo of a living example from a wildlife sighting, labelled "Living example". Counts are always UK specimens only.</p>
-    <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species).</p>
+    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, reptiles and amphibians it shows a living example first, labelled "Living example", as preserved ones can be upsetting to look at. Counts are always UK specimens only.</p>
+    <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species) · <a href="#pick">Photo picker</a> (choose the photo each species uses).</p>
     <p class="small muted">Counts are approximate and change as museums add records. Group colours are from Sanzo Wada's <i>A Dictionary of Color Combinations</i>; screen colours are approximate.</p>
     <div class="row"><a class="btn" href="#play">Play today's puzzle</a></div>
   </section>`;
@@ -807,7 +883,7 @@ async function checkView() {
     try {
       const key = await matchName(sci, rank || "species");
       if (!key) line = { name, sci, result: "no name match" };
-      else { const r = await findPhoto(getJSON, key, group); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url }; }
+      else { const r = await findPhoto(getJSON, key, group, sci); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url }; }
     } catch (e) { line = { name, sci, result: "error", detail: String(e && e.message || e) }; }
     done++; const l = $("#loading"); if (l) l.textContent = `Checked ${done} of ${SPECIES.length}…`;
     return line;
@@ -840,16 +916,63 @@ async function checkView() {
   };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Report copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); } };
   // clear cached photos so the game picks up the new ones
-  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp2.${sci}`); } catch {} });
+  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp3.${sci}`); } catch {} });
+}
+
+/* ---------- photo picker (for choosing the photo each species uses) ---------- */
+const picker = { group: "mammal" };
+async function pickView() {
+  const picks = local.get("uks.picks") || {};
+  const count = () => Object.keys(local.get("uks.picks") || {}).length;
+  const list = SPECIES.map((sp, i) => ({ i, name: sp[0], sci: sp[1], group: sp[2], rank: sp[4] })).filter((sp) => sp.group === picker.group);
+  app.innerHTML = `<section class="stack"><h1 class="title">Photo picker</h1>
+    <p>Choose the photo each species should use. Tap the best one, or "No photo" if none are suitable. Your picks are saved on this phone, so you can do one category at a time.</p>
+    <div class="chips" role="group" aria-label="Category">${CHIPS.filter(([k]) => k !== "all").map(([k, l]) =>
+      `<button class="chip" type="button" data-pk="${k}" aria-pressed="${picker.group === k}"><i style="background:${GROUPS[k].hex}"></i>${esc(l)}</button>`).join("")}</div>
+    <div class="row"><button class="btn" type="button" id="copypicks">Copy all picks (<span id="npicks">${count()}</span>)</button></div>
+    <p class="small muted">When you're done, paste the copied list into the chat with Claude.</p>
+    <div id="picklist">${list.map((sp) => `<div class="pickrow" id="pr-${sp.i}"><h3>${esc(sp.name)} <small>${esc(sp.sci)}</small>${PICKED[sp.sci] !== undefined ? ' <span class="done">already picked</span>' : ""}</h3><p class="small muted">Loading options…</p></div>`).join("")}</div></section>`;
+  app.querySelectorAll("[data-pk]").forEach((b) => (b.onclick = () => { picker.group = b.dataset.pk; pickView(); }));
+  $("#copypicks").onclick = async () => {
+    const all = local.get("uks.picks") || {};
+    if (!Object.keys(all).length) return toast("Pick some photos first");
+    const text = "Picked photos:\n" + Object.entries(all).map(([sci, p]) => `${JSON.stringify(sci)}: ${JSON.stringify(p)},`).join("\n");
+    try { await navigator.clipboard.writeText(text); toast(`Copied ${Object.keys(all).length} picks`); } catch { toast("Couldn't copy, sorry"); }
+  };
+  const group = picker.group;
+  await pool(list, 2, async (sp) => {
+    let opts = [], err = "";
+    try {
+      const key = await matchName(sp.sci, sp.rank || "species");
+      if (key) opts = await photoOptions(getJSON, key, sp.group); else err = "No name match";
+    } catch (e) { err = "Couldn't load options"; }
+    if (route() !== "pick" || picker.group !== group) return;
+    const row = $(`#pr-${sp.i}`); if (!row) return;
+    const chosen = (local.get("uks.picks") || {})[sp.sci];
+    const isOn = (p) => chosen && chosen.url === p.url;
+    const label = { uk: "UK specimen", world: "Specimen elsewhere", living: "Living" };
+    row.querySelector("p").outerHTML = `<div class="gallery">${opts.map((p, n) => `<button type="button" class="gitem pick" data-n="${n}" aria-pressed="${isOn(p)}">
+        <img src="${esc(thumbUrl(p.url, 300))}" data-orig="${esc(p.url.replace(/^http:/, "https:"))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.orig){this.src=this.dataset.orig;this.dataset.orig=''}else{this.replaceWith(Object.assign(document.createElement('span'),{className:'gfail',textContent:'Didn\\'t load'}))}">
+        <span>${label[p.kind]}${p.country && p.kind !== "uk" ? ` · ${esc(p.country)}` : ""}</span></button>`).join("")}
+      <button type="button" class="gitem pick nophoto" data-n="none" aria-pressed="${chosen === null}"><span class="gfail">No photo</span><span>Use colour</span></button></div>
+      ${err || !opts.length ? `<p class="small muted">${err || "No usable photos found."}</p>` : ""}`;
+    row.querySelectorAll(".pick").forEach((b) => (b.onclick = () => {
+      const all = local.get("uks.picks") || {};
+      all[sp.sci] = b.dataset.n === "none" ? null : opts[Number(b.dataset.n)];
+      local.set("uks.picks", all);
+      row.querySelectorAll(".pick").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      $("#npicks").textContent = count();
+    }));
+  });
 }
 
 const TABS = [["play", "Play"], ["practice", "Practice"], ["explore", "Explore"], ["learn", "Learn"]];
-const route = () => { const r = location.hash.replace("#", ""); return r === "check" || TABS.some(([k]) => k === r) ? r : "play"; };
+const route = () => { const r = location.hash.replace("#", ""); return r === "check" || r === "pick" || TABS.some(([k]) => k === r) ? r : "play"; };
 function render() {
   const r = route();
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<a href="#${k}" role="tab" aria-selected="${k === r}">${l}</a>`).join("");
   window.scrollTo(0, 0);
-  ({ play, practice: practiceView, explore: exploreView, learn: learnView, check: checkView })[r]();
+  ({ play, practice: practiceView, explore: exploreView, learn: learnView, check: checkView, pick: pickView })[r]();
 }
 window.addEventListener("hashchange", render);
 render();

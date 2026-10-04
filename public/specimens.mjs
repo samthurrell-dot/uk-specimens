@@ -241,55 +241,120 @@ export function licenceOf(l = "") {
 // Photos checked by eye and found not to be specimens (from the gallery on the photo check page).
 // Add the image addresses here and they'll be skipped for everyone.
 export const BAD_PHOTOS = new Set([
+  // checked 4 Oct 2026: paperwork, or upsetting photos of dead animals
+  "https://data.nhm.ac.uk/media/3d5c767b-2b93-41dc-88bf-86fbac5bd50d",
+  "https://data.nhm.ac.uk/media/28aadd55-63c6-4759-82bd-ab50d7f351b4",
+  "https://data.nhm.ac.uk/media/1b05128f-4f02-4b22-a19f-a8dcd7f4dfe4",
+  "https://data.nhm.ac.uk/media/8c18eb5f-a109-4084-bf27-4ece705c9965",
+  "https://data.nhm.ac.uk/media/8d7c2bdc-821c-4092-b4ea-5b81245f7d08",
+  "https://data.nhm.ac.uk/media/2eb1ac48-735f-4eed-9fd6-3912e3dd995c",
+  "https://caos.boldsystems.org/api/objects/caos-cloud.linode-us-east.13_191.8f600dd7-68cb-4ca7-b283-304c38846fed.jpg?subunit=1024.jpg",
+  "https://data.nhm.ac.uk/media/6dc830de-c3e4-42b6-9822-9ed609dee4e5",
+  "https://data.nhm.ac.uk/media/8cbdaf12-1f98-4a6d-bf68-760fc9a49a4c",
+  "https://data.nhm.ac.uk/media/310f2ca4-c465-4fe6-8a76-50ebe75387dd",
+  "https://data.nhm.ac.uk/media/6e963590-adc5-48b6-bcdb-0ab23aa7c177",
+  "https://bellatlas-images.s3.msi.umn.edu/SMM/Z2/Z2019_3_26_s_lg.jpg",
+  "https://data.nhm.ac.uk/media/eb62b8fa-f5fd-42d3-91bb-d2146ac4e411",
+  "https://biorepo.neonscience.org/media/NEON_MAMC-VSS/00000/B00000164938-1_1748039100_lg.jpg",
+  "https://medialib.naturalis.nl/file/id/RMNH.MAM.63914_preplog/format/large",
+  "https://assets-swiss.specifycloud.org/fileget?coll=mhng&type=O&filename=sp65750557384930612362.att.JPG",
+  "http://photos.gbif.fr/Bourges/PrepaZool/2020-10-1_face.JPG",
+  "https://data.nhm.ac.uk/media/aa4b064b-d2ce-4479-91f6-f0afd4ee50cc",
+  "https://data.nhm.ac.uk/media/01ff8cbc-d1fb-461a-9acb-2693ff9bb49f",
+  "https://data.nhm.ac.uk/media/c92f297f-beae-4cf0-9821-01391acc940b",
+  "https://data.nhm.ac.uk/media/2cc33323-a554-48e5-80d6-7b4666d484d1",
+  "https://data.nhm.ac.uk/media/857f299f-1f90-498d-b3dc-7e2078c8722b",
+  "https://data.nhm.ac.uk/media/08f26672-ea32-4206-95a4-774528ee2964",
+  "https://data.nhm.ac.uk/media/1b69f73f-d463-4d3f-89fc-1e2aad52ea13",
+  "https://data.nhm.ac.uk/media/a4a6b5dc-b5e7-46e0-b224-4d98923fe4e2",
+  "https://arter.dk/media/aef0f865-5eeb-48be-a276-e5fd9cdb61b1.jpg",
+  "https://data.nhm.ac.uk/media/c3d37040-e0cb-4e8d-b265-5146a61d8f76",
+  "https://data.nhm.ac.uk/media/31ef8427-cba6-4d4d-8a80-68c943343d85",
+  "https://data.nhm.ac.uk/media/461ccd79-3958-44aa-bd61-7aac1ea4afd6",
+  "https://data.nhm.ac.uk/media/9da6f288-df47-4029-99d1-dbbbbdebf3cb",
+  "https://data.nhm.ac.uk/media/03d91680-2f6a-422d-8d33-d67a3a570e07",
+  "https://data.nhm.ac.uk/media/6819f3c1-5c1f-4086-8249-4e994bda4265",
+  "https://data.nhm.ac.uk/media/971366f2-1a9a-4d9d-bdf7-36997d00afcb",
 ]);
 
-// Look through a page of GBIF results and pick the first usable photo, counting why others were skipped.
-export function examine(results = []) {
-  const tally = { seen: 0, paperwork: 0, licence: 0, other: 0 };
-  let photo = null;
+// Photos chosen by hand in the photo picker (#pick). The game uses these first and doesn't search at all.
+// null means "no good photo: show the group colour".
+export const PICKED = {
+};
+
+const usable = (o, m) => {
+  if (m.type !== "StillImage") return { why: "skip" };
+  const url = m.identifier || "", lic = licenceOf(m.license || o.license || "");
+  if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) return { why: "other" };
+  if (!lic) return { why: "licence" };
+  if (BAD_PHOTOS.has(url)) return { why: "paperwork" };
+  if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) return { why: "paperwork" };
+  const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
+  return { photo: { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" } };
+};
+
+// Look through a page of GBIF results and collect up to `max` usable photos, counting why others were skipped.
+export function examine(results = [], max = 1) {
+  const tally = { seen: 0, paperwork: 0, licence: 0, other: 0 }, photos = [], seenOcc = new Set();
   for (const o of results) {
     for (const m of o.media || []) {
       if (m.type !== "StillImage") continue;
       tally.seen++;
-      if (photo) continue;
-      const url = m.identifier || "", lic = licenceOf(m.license || o.license || "");
-      if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) { tally.other++; continue; }
-      if (!lic) { tally.licence++; continue; }
-      if (BAD_PHOTOS.has(url)) { tally.paperwork++; continue; }
-      if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) { tally.paperwork++; continue; }
-      const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
-      photo = { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" };
+      if (photos.length >= max) continue;
+      const u = usable(o, m);
+      if (u.photo) { if (!seenOcc.has(o.key)) { photos.push(u.photo); seenOcc.add(o.key); } } else tally[u.why]++;
     }
   }
-  return { photo, ...tally };
+  return { photo: photos[0] || null, photos, ...tally };
 }
 
-// Where to look, in order: UK museum specimens, then museum specimens anywhere, then photos of living examples.
+// Where to look. Usually: UK museum specimens, then specimens anywhere, then photos of living examples.
+// Mammals, reptiles and amphibians look for living examples first, as preserved ones can be upsetting to look at.
 const SPECIMEN_TYPES = "basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
-export const PHOTO_TIERS = [
-  { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}` },
-  { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES },
-  { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", skip: ["fossil"] },
-];
+const TIER = {
+  uk: { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}`, limit: 50 },
+  world: { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES, limit: 50 },
+  living: { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", limit: 20 },
+};
+export const LIVING_FIRST = ["mammal", "herp"];
+export const tiersFor = (group) =>
+  group === "fossil" ? [TIER.uk, TIER.world] : LIVING_FIRST.includes(group) ? [TIER.living, TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
+export const PHOTO_TIERS = [TIER.uk, TIER.world, TIER.living];
+
+async function searchTier(getJSON, t, key, max) {
+  const url = `https://api.gbif.org/v1/occurrence/search?limit=${t.limit}&mediaType=StillImage&taxonKey=${key}&${t.query}`;
+  const r = await getJSON(url);
+  let e = examine(r.results, max);
+  // UK pages that were all paperwork: look one page further before giving up on UK photos
+  if (!e.photo && t.kind === "uk" && (r.results || []).length === t.limit && e.paperwork >= e.seen - e.other) {
+    const e2 = examine((await getJSON(url + `&offset=${t.limit}`)).results, max);
+    e = { photo: e2.photo, photos: e2.photos, seen: e.seen + e2.seen, paperwork: e.paperwork + e2.paperwork, licence: e.licence + e2.licence, other: e.other + e2.other };
+  }
+  return e;
+}
+
 // getJSON is passed in so the page and the server can share this. Returns { photo, log } where log says what each tier found.
-export async function findPhoto(getJSON, key, group) {
+export async function findPhoto(getJSON, key, group, sci) {
+  if (sci && Object.prototype.hasOwnProperty.call(PICKED, sci)) return { photo: PICKED[sci], log: [{ kind: "picked", found: !!PICKED[sci] }] };
   const log = [];
-  for (const t of PHOTO_TIERS) {
-    if (t.skip && t.skip.includes(group)) continue;
+  for (const t of tiersFor(group)) {
     try {
-      const limit = t.kind === "living" ? 20 : 50, url = `https://api.gbif.org/v1/occurrence/search?limit=${limit}&mediaType=StillImage&taxonKey=${key}&${t.query}`;
-      const r = await getJSON(url);
-      let e = examine(r.results);
-      // UK pages that were all paperwork: look one page further before giving up on UK photos
-      if (!e.photo && t.kind === "uk" && (r.results || []).length === limit && e.paperwork >= e.seen - e.other) {
-        const e2 = examine((await getJSON(url + `&offset=${limit}`)).results);
-        e = { photo: e2.photo, seen: e.seen + e2.seen, paperwork: e.paperwork + e2.paperwork, licence: e.licence + e2.licence, other: e.other + e2.other };
-      }
-      log.push({ kind: t.kind, ...e, photo: undefined, found: !!e.photo });
+      const e = await searchTier(getJSON, t, key, 1);
+      log.push({ kind: t.kind, seen: e.seen, paperwork: e.paperwork, licence: e.licence, other: e.other, found: !!e.photo });
       if (e.photo) return { photo: { ...e.photo, kind: t.kind }, log };
     } catch (err) { log.push({ kind: t.kind, error: String(err && err.message || err) }); }
   }
   return { photo: null, log };
+}
+
+// For the photo picker: up to 3 options from each place, in the same order as findPhoto, at most 6 in all.
+export async function photoOptions(getJSON, key, group) {
+  const out = [];
+  for (const t of tiersFor(group)) {
+    if (out.length >= 6) break;
+    try { const e = await searchTier(getJSON, t, key, 3); e.photos.slice(0, 6 - out.length).forEach((p) => out.push({ ...p, kind: t.kind })); } catch {}
+  }
+  return out;
 }
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
 export const thumbUrl = (url, w = 600) => `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;

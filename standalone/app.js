@@ -24,7 +24,7 @@ const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=$
 // Returns the species with its count, null if it has no records, or undefined if GBIF couldn't be reached.
 async function lookup(i, withPhoto = true) {
   const [name, sci, group, fact, rank] = SPECIES[i];
-  const ck = `uks.sp2.${sci}`, cached = local.get(ck);
+  const ck = `uks.sp3.${sci}`, cached = local.get(ck);
   if (cached && Date.now() - cached.t < WEEK && (!withPhoto || cached.photoChecked)) return cached.none ? null : { ...cached.v, i };
   try {
     const key = await matchName(sci, rank || "species");
@@ -33,7 +33,7 @@ async function lookup(i, withPhoto = true) {
     if (!c.count) { local.set(ck, { t: Date.now(), none: true, photoChecked: true }); return null; }
     let photo = cached && cached.v && cached.v.key === key ? cached.v.photo : null, photoChecked = false;
     if (withPhoto) {
-      try { photo = (await findPhoto(getJSON, key, group)).photo; photoChecked = true; } catch {}
+      try { photo = (await findPhoto(getJSON, key, group, sci)).photo; photoChecked = true; } catch {}
     }
     const v = { name, sci, group, fact, key, count: c.count, photo, link: recordsLink(key) };
     local.set(ck, { t: Date.now(), v, photoChecked });
@@ -78,7 +78,7 @@ function card(s, opts = {}) {
 // "Not a specimen?" hides that photo on this device and remembers it, so it can be fed back into the filter later
 function wireReports(root) {
   root.querySelectorAll("[data-report]").forEach((b) => (b.onclick = () => {
-    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp2.${sci}`);
+    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp3.${sci}`);
     bad[sci] = c && c.v && c.v.photo ? c.v.photo.url : true; local.set("uks.badphotos", bad);
     const art = b.closest(".card"); art.querySelector(".pic").className = "pic none"; art.querySelector(".pic").innerHTML = ""; b.closest(".credit").remove();
     toast("Thanks. That photo is hidden on this phone.");
@@ -114,7 +114,7 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
 let day = null, prog = null, step = 0, pending = null, started = false;
 
 async function buildDay(onProgress) {
-  const cached = local.get(`uks.day2.${puzzle}`);
+  const cached = local.get(`uks.day3.${puzzle}`);
   if (cached && cached.chain && cached.chain.length === ROUNDS + 1) return cached;
   const order = candidateOrder(puzzle), found = new Map();
   let failed = 0, tried = 0;
@@ -128,7 +128,7 @@ async function buildDay(onProgress) {
   const chain = buildChain(order, (i) => found.has(i));
   if (chain.length < ROUNDS + 1) throw new Error(failed === tried ? "unreachable" : "short");
   const d = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };
-  local.set(`uks.day2.${puzzle}`, d);
+  local.set(`uks.day3.${puzzle}`, d);
   return d;
 }
 async function play() {
@@ -236,11 +236,17 @@ function practiceTop() {
     `<button class="chip" type="button" data-cat="${k}" aria-pressed="${practice.group === k}">${k !== "all" ? `<i style="background:${GROUPS[k].hex}"></i>` : ""}${esc(l)}</button>`).join("")}</div>`;
 }
 async function practiceView() {
+  const token = (practice.token = (practice.token || 0) + 1); // a newer call (e.g. a category tap) wins
   if (!practice.a || !practice.b) {
     app.innerHTML = `<section class="stack"><h1 class="title">Practice</h1>${practiceTop()}<p class="muted">Finding two specimens…</p></section>`;
     wireChips();
-    try { practice.a = practice.a || (await drawSpecies([])); practice.b = await drawSpecies([practice.a.i]); }
-    catch (e) { return errorBox(e.message, practiceView); }
+    try {
+      const a = practice.a || (await drawSpecies([]));
+      if (token !== practice.token) return;
+      const b = await drawSpecies([a.i]);
+      if (token !== practice.token) return;
+      practice.a = a; practice.b = b;
+    } catch (e) { if (token === practice.token) errorBox(e.message, practiceView); return; }
     if (route() !== "practice") return;
   }
   pairView({ label: `Practice · Run of ${practice.run} · Best ${practice.best}`, a: practice.a, b: practice.b, pending: practice.pending, nextLabel: "Next pair" });
@@ -322,8 +328,8 @@ function learnView() {
     <p>Most specimens are kept in stores rather than on display, but museums near Manchester show some of their collections, including <a href="https://www.museum.manchester.ac.uk/" target="_blank" rel="noopener">Manchester Museum</a> and <a href="https://www.liverpoolmuseums.org.uk/world-museum" target="_blank" rel="noopener">World Museum Liverpool</a>. The <a href="https://www.nhm.ac.uk/" target="_blank" rel="noopener">Natural History Museum</a> in London holds the UK's largest collection.</p>
     <h2>About the photos</h2>
     <p>Photos come from the museums' own records. Some museums photograph paperwork, like old registers and labels, as well as specimens. The game tries to skip those by checking each photo's description, but some will still slip through. If you spot one, tap "Not a specimen?" and it'll be hidden on your phone.</p>
-    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". If there's no specimen photo anywhere, it shows a photo of a living example from a wildlife sighting, labelled "Living example". Counts are always UK specimens only.</p>
-    <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species).</p>
+    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, reptiles and amphibians it shows a living example first, labelled "Living example", as preserved ones can be upsetting to look at. Counts are always UK specimens only.</p>
+    <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species) · <a href="#pick">Photo picker</a> (choose the photo each species uses).</p>
     <p class="small muted">Counts are approximate and change as museums add records. Group colours are from Sanzo Wada's <i>A Dictionary of Color Combinations</i>; screen colours are approximate.</p>
     <div class="row"><a class="btn" href="#play">Play today's puzzle</a></div>
   </section>`;
@@ -342,7 +348,7 @@ async function checkView() {
     try {
       const key = await matchName(sci, rank || "species");
       if (!key) line = { name, sci, result: "no name match" };
-      else { const r = await findPhoto(getJSON, key, group); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url }; }
+      else { const r = await findPhoto(getJSON, key, group, sci); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url }; }
     } catch (e) { line = { name, sci, result: "error", detail: String(e && e.message || e) }; }
     done++; const l = $("#loading"); if (l) l.textContent = `Checked ${done} of ${SPECIES.length}…`;
     return line;
@@ -375,16 +381,63 @@ async function checkView() {
   };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Report copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); } };
   // clear cached photos so the game picks up the new ones
-  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp2.${sci}`); } catch {} });
+  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp3.${sci}`); } catch {} });
+}
+
+/* ---------- photo picker (for choosing the photo each species uses) ---------- */
+const picker = { group: "mammal" };
+async function pickView() {
+  const picks = local.get("uks.picks") || {};
+  const count = () => Object.keys(local.get("uks.picks") || {}).length;
+  const list = SPECIES.map((sp, i) => ({ i, name: sp[0], sci: sp[1], group: sp[2], rank: sp[4] })).filter((sp) => sp.group === picker.group);
+  app.innerHTML = `<section class="stack"><h1 class="title">Photo picker</h1>
+    <p>Choose the photo each species should use. Tap the best one, or "No photo" if none are suitable. Your picks are saved on this phone, so you can do one category at a time.</p>
+    <div class="chips" role="group" aria-label="Category">${CHIPS.filter(([k]) => k !== "all").map(([k, l]) =>
+      `<button class="chip" type="button" data-pk="${k}" aria-pressed="${picker.group === k}"><i style="background:${GROUPS[k].hex}"></i>${esc(l)}</button>`).join("")}</div>
+    <div class="row"><button class="btn" type="button" id="copypicks">Copy all picks (<span id="npicks">${count()}</span>)</button></div>
+    <p class="small muted">When you're done, paste the copied list into the chat with Claude.</p>
+    <div id="picklist">${list.map((sp) => `<div class="pickrow" id="pr-${sp.i}"><h3>${esc(sp.name)} <small>${esc(sp.sci)}</small>${PICKED[sp.sci] !== undefined ? ' <span class="done">already picked</span>' : ""}</h3><p class="small muted">Loading options…</p></div>`).join("")}</div></section>`;
+  app.querySelectorAll("[data-pk]").forEach((b) => (b.onclick = () => { picker.group = b.dataset.pk; pickView(); }));
+  $("#copypicks").onclick = async () => {
+    const all = local.get("uks.picks") || {};
+    if (!Object.keys(all).length) return toast("Pick some photos first");
+    const text = "Picked photos:\n" + Object.entries(all).map(([sci, p]) => `${JSON.stringify(sci)}: ${JSON.stringify(p)},`).join("\n");
+    try { await navigator.clipboard.writeText(text); toast(`Copied ${Object.keys(all).length} picks`); } catch { toast("Couldn't copy, sorry"); }
+  };
+  const group = picker.group;
+  await pool(list, 2, async (sp) => {
+    let opts = [], err = "";
+    try {
+      const key = await matchName(sp.sci, sp.rank || "species");
+      if (key) opts = await photoOptions(getJSON, key, sp.group); else err = "No name match";
+    } catch (e) { err = "Couldn't load options"; }
+    if (route() !== "pick" || picker.group !== group) return;
+    const row = $(`#pr-${sp.i}`); if (!row) return;
+    const chosen = (local.get("uks.picks") || {})[sp.sci];
+    const isOn = (p) => chosen && chosen.url === p.url;
+    const label = { uk: "UK specimen", world: "Specimen elsewhere", living: "Living" };
+    row.querySelector("p").outerHTML = `<div class="gallery">${opts.map((p, n) => `<button type="button" class="gitem pick" data-n="${n}" aria-pressed="${isOn(p)}">
+        <img src="${esc(thumbUrl(p.url, 300))}" data-orig="${esc(p.url.replace(/^http:/, "https:"))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.orig){this.src=this.dataset.orig;this.dataset.orig=''}else{this.replaceWith(Object.assign(document.createElement('span'),{className:'gfail',textContent:'Didn\\'t load'}))}">
+        <span>${label[p.kind]}${p.country && p.kind !== "uk" ? ` · ${esc(p.country)}` : ""}</span></button>`).join("")}
+      <button type="button" class="gitem pick nophoto" data-n="none" aria-pressed="${chosen === null}"><span class="gfail">No photo</span><span>Use colour</span></button></div>
+      ${err || !opts.length ? `<p class="small muted">${err || "No usable photos found."}</p>` : ""}`;
+    row.querySelectorAll(".pick").forEach((b) => (b.onclick = () => {
+      const all = local.get("uks.picks") || {};
+      all[sp.sci] = b.dataset.n === "none" ? null : opts[Number(b.dataset.n)];
+      local.set("uks.picks", all);
+      row.querySelectorAll(".pick").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      $("#npicks").textContent = count();
+    }));
+  });
 }
 
 const TABS = [["play", "Play"], ["practice", "Practice"], ["explore", "Explore"], ["learn", "Learn"]];
-const route = () => { const r = location.hash.replace("#", ""); return r === "check" || TABS.some(([k]) => k === r) ? r : "play"; };
+const route = () => { const r = location.hash.replace("#", ""); return r === "check" || r === "pick" || TABS.some(([k]) => k === r) ? r : "play"; };
 function render() {
   const r = route();
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<a href="#${k}" role="tab" aria-selected="${k === r}">${l}</a>`).join("");
   window.scrollTo(0, 0);
-  ({ play, practice: practiceView, explore: exploreView, learn: learnView, check: checkView })[r]();
+  ({ play, practice: practiceView, explore: exploreView, learn: learnView, check: checkView, pick: pickView })[r]();
 }
 window.addEventListener("hashchange", render);
 render();

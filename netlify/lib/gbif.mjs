@@ -18,8 +18,8 @@ export async function countFor(key) {
 
 // One openly licensed photo (paperwork filtered out), with credit, or null. Tries UK specimens, then specimens
 // anywhere, then living examples; photo.kind says which.
-export async function photoFor(key, group) {
-  return (await findPhoto(getJSON, key, group)).photo;
+export async function photoFor(key, group, sci) {
+  return (await findPhoto(getJSON, key, group, sci)).photo;
 }
 
 // Link to the same records on GBIF so players can explore them.
