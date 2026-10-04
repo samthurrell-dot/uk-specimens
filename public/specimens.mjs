@@ -181,6 +181,42 @@ export const ratio = (a, b) => {
   return `about ${fmt(Math.round(r))} times as many as`;
 };
 
+// ---- talking to GBIF (shared by the page and the server) ----
+// GBIF refuses or slows down when asked too much too quickly, so retry a couple of times with a pause.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export async function fetchJSON(url, { timeout = 12000, tries = 3 } = {}) {
+  let last;
+  for (let n = 0; n < tries; n++) {
+    if (n > 0) await sleep(last.wait || 800 * n * n);
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), timeout);
+    let res;
+    try { res = await fetch(url, { signal: ctl.signal, headers: { accept: "application/json" } }); }
+    catch (e) { last = new Error(e && e.name === "AbortError" ? "timed out" : "network error"); clearTimeout(t); continue; }
+    try {
+      if (res.ok) return await res.json();
+    } catch { last = new Error("bad reply"); continue; }
+    finally { clearTimeout(t); }
+    last = new Error(`GBIF ${res.status}`);
+    if (res.status !== 429 && res.status < 500) throw last; // a real "no", not worth retrying
+    const after = Number(res.headers.get("retry-after"));
+    last.wait = after > 0 ? Math.min(5000, after * 1000) : 0;
+  }
+  throw last;
+}
+
+// Turn a scientific name into a GBIF taxon key. Tries a strict match first; if that finds nothing, a looser
+// match is accepted only when GBIF's name is exactly ours, so a typo can't count a whole genus or family instead.
+export async function matchTaxon(getJSON, name, rank = "species") {
+  const R = rank.toUpperCase(), base = `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(name)}&rank=${R}`;
+  const ok = (m) => m && m.usageKey && m.matchType !== "NONE" && m.matchType !== "HIGHERRANK" && (!m.rank || m.rank === R);
+  let m = await getJSON(base + "&strict=true");
+  if (!ok(m)) {
+    m = await getJSON(base);
+    if (!ok(m) || String(m.canonicalName || "").toLowerCase() !== name.toLowerCase()) return null;
+  }
+  return m.acceptedUsageKey || m.usageKey;
+}
+
 // ---- choosing a photo ----
 // Many museum images are of paperwork (accession registers, index cards, labels) rather than the specimen.
 // GBIF doesn't say which is which, so this skips any image whose title, description or file name suggests a document.
@@ -230,8 +266,14 @@ export async function findPhoto(getJSON, key, group) {
   for (const t of PHOTO_TIERS) {
     if (t.skip && t.skip.includes(group)) continue;
     try {
-      const r = await getJSON(`https://api.gbif.org/v1/occurrence/search?limit=${t.kind === "living" ? 20 : 50}&mediaType=StillImage&taxonKey=${key}&${t.query}`);
-      const e = examine(r.results);
+      const limit = t.kind === "living" ? 20 : 50, url = `https://api.gbif.org/v1/occurrence/search?limit=${limit}&mediaType=StillImage&taxonKey=${key}&${t.query}`;
+      const r = await getJSON(url);
+      let e = examine(r.results);
+      // UK pages that were all paperwork: look one page further before giving up on UK photos
+      if (!e.photo && t.kind === "uk" && (r.results || []).length === limit && e.paperwork >= e.seen - e.other) {
+        const e2 = examine((await getJSON(url + `&offset=${limit}`)).results);
+        e = { photo: e2.photo, seen: e.seen + e2.seen, paperwork: e.paperwork + e2.paperwork, licence: e.licence + e2.licence, other: e.other + e2.other };
+      }
       log.push({ kind: t.kind, ...e, photo: undefined, found: !!e.photo });
       if (e.photo) return { photo: { ...e.photo, kind: t.kind }, log };
     } catch (err) { log.push({ kind: t.kind, error: String(err && err.message || err) }); }

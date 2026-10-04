@@ -16,17 +16,8 @@ const local = {
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2400); }
 
 /* ---------- GBIF ---------- */
-async function getJSON(url) {
-  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 9000);
-  try { const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error("GBIF " + r.status); return await r.json(); }
-  finally { clearTimeout(t); }
-}
-async function matchName(name, rank = "species") {
-  const m = await getJSON(`${API}/species/match?name=${encodeURIComponent(name)}&rank=${rank.toUpperCase()}&strict=true`);
-  if (!m || !m.usageKey || m.matchType === "NONE" || m.matchType === "HIGHERRANK") return null;
-  if (m.rank && m.rank !== rank.toUpperCase()) return null;
-  return m.acceptedUsageKey || m.usageKey;
-}
+const getJSON = (url) => fetchJSON(url);
+const matchName = (name, rank) => matchTaxon(getJSON, name, rank);
 const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=${key}&publishing_country=GB&basis_of_record=PRESERVED_SPECIMEN&basis_of_record=FOSSIL_SPECIMEN&basis_of_record=MATERIAL_SAMPLE`;
 
 // Look up one species. Results are kept on the device for a week.
@@ -127,8 +118,9 @@ async function buildDay(onProgress) {
   if (cached && cached.chain && cached.chain.length === ROUNDS + 1) return cached;
   const order = candidateOrder(puzzle), found = new Map();
   let failed = 0, tried = 0;
+  // a few at a time, so GBIF doesn't refuse the requests
   for (let start = 0; start < order.length; start += 12) {
-    const got = await Promise.all(order.slice(start, start + 12).map((i) => lookup(i)));
+    const got = await pool(order.slice(start, start + 12), 4, (i) => lookup(i));
     got.forEach((g) => { tried++; if (g === undefined) failed++; else if (g) found.set(g.i, g); });
     onProgress(found.size);
     if (found.size >= ROUNDS + 6 || !found.size) break;
@@ -276,7 +268,7 @@ async function exploreView() {
   if (!explore.list) {
     app.innerHTML = `<section class="stack"><h1 class="title">Explore</h1><p class="muted" id="loading">Looking up every species…</p></section>`;
     let done = 0;
-    const got = await pool(SPECIES.map((_, i) => i), 6, async (i) => {
+    const got = await pool(SPECIES.map((_, i) => i), 3, async (i) => {
       const s = await lookup(i, false);
       done++; const l = $("#loading"); if (l) l.textContent = `Looking up every species… ${done} of ${SPECIES.length}`;
       return s;
@@ -341,26 +333,26 @@ function learnView() {
 /* ---------- photo check (for testing) ---------- */
 async function checkView() {
   app.innerHTML = `<section class="stack"><h1 class="title">Photo check</h1>
-    <p>This looks up photos for every species and shows what it found, so we can see which ones still need work. It takes a minute or two.</p>
+    <p>This looks up photos for every species and shows what it found, so we can see which ones still need work. It takes a few minutes, as it goes gently so GBIF doesn't refuse the requests.</p>
     <p class="muted" id="loading">Starting…</p><div id="out"></div></section>`;
   let done = 0;
-  const rows = await pool(SPECIES.map((_, i) => i), 4, async (i) => {
+  const rows = await pool(SPECIES.map((_, i) => i), 2, async (i) => {
     const [name, sci, group, , rank] = SPECIES[i];
     let line;
     try {
       const key = await matchName(sci, rank || "species");
       if (!key) line = { name, sci, result: "no name match" };
       else { const r = await findPhoto(getJSON, key, group); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url }; }
-    } catch (e) { line = { name, sci, result: "error" }; }
+    } catch (e) { line = { name, sci, result: "error", detail: String(e && e.message || e) }; }
     done++; const l = $("#loading"); if (l) l.textContent = `Checked ${done} of ${SPECIES.length}…`;
     return line;
   });
   if (route() !== "check") return;
   const n = (k) => rows.filter((r) => r.result === k).length;
-  const fmtLog = (log = []) => log.map((t) => t.error ? `${t.kind}: error` : `${t.kind}: ${t.seen} seen, ${t.paperwork} paperwork, ${t.licence} licence, ${t.other} other${t.found ? " → used" : ""}`).join(" | ");
+  const fmtLog = (log = []) => log.map((t) => t.error ? `${t.kind}: error (${t.error})` : `${t.kind}: ${t.seen} seen, ${t.paperwork} paperwork, ${t.licence} licence, ${t.other} other${t.found ? " → used" : ""}`).join(" | ");
   const text = [`Photo check ${new Date().toLocaleString("en-GB")}`,
     `UK specimen ${n("uk")} · elsewhere ${n("world")} · living ${n("living")} · none ${n("none")} · no match ${n("no name match")} · errors ${n("error")}`, "",
-    ...rows.map((r) => `${r.name} (${r.sci}): ${r.result}${r.log ? " — " + fmtLog(r.log) : ""}${r.url ? " — " + r.url : ""}`)].join("\n");
+    ...rows.map((r) => `${r.name} (${r.sci}): ${r.result}${r.detail ? " (" + r.detail + ")" : ""}${r.log ? " — " + fmtLog(r.log) : ""}${r.url ? " — " + r.url : ""}`)].join("\n");
   $("#loading").textContent = "Done.";
   $("#out").innerHTML = `<p class="rank">UK specimen ${n("uk")} · Elsewhere ${n("world")} · Living ${n("living")} · None ${n("none")}${n("no name match") ? ` · No match ${n("no name match")}` : ""}${n("error") ? ` · Errors ${n("error")}` : ""}</p>
     <div class="row"><button class="btn" type="button" id="copy">Copy report</button></div>

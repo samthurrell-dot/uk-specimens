@@ -2,24 +2,14 @@
 // "UK specimens" here means: records published to GBIF by UK-based organisations that are preserved specimens,
 // fossil specimens or material samples. That's close to the DiSSCo UK portal's own rule, but not identical
 // (the portal also requires each publisher to have a GRSciColl collection entry), so counts are approximate.
-import { findPhoto } from "../../public/specimens.mjs";
+import { findPhoto, fetchJSON, matchTaxon } from "../../public/specimens.mjs";
 const API = "https://api.gbif.org/v1";
 const FILTER = "publishingCountry=GB&basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
 
-async function getJSON(url, ms = 7000) {
-  const res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(ms) });
-  if (!res.ok) throw new Error(`GBIF ${res.status} for ${url}`);
-  return res.json();
-}
+const getJSON = (url) => fetchJSON(url, { timeout: 7000, tries: 2 });
 
-// Turn a scientific name into a GBIF taxon key. Only accepts a clear match at the expected rank,
-// so a typo can't quietly count a whole genus or family instead.
-export async function matchName(name, rank = "species") {
-  const m = await getJSON(`${API}/species/match?name=${encodeURIComponent(name)}&rank=${rank.toUpperCase()}&strict=true`);
-  if (!m || !m.usageKey || m.matchType === "NONE" || m.matchType === "HIGHERRANK") return null;
-  if (m.rank && m.rank !== rank.toUpperCase()) return null;
-  return m.acceptedUsageKey || m.usageKey;
-}
+// Turn a scientific name into a GBIF taxon key (see matchTaxon in public/specimens.mjs).
+export const matchName = (name, rank = "species") => matchTaxon(getJSON, name, rank);
 
 export async function countFor(key) {
   const r = await getJSON(`${API}/occurrence/search?limit=0&taxonKey=${key}&${FILTER}`);
