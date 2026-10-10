@@ -275,6 +275,56 @@ export const BAD_PHOTOS = new Set([
   "https://data.nhm.ac.uk/media/03d91680-2f6a-422d-8d33-d67a3a570e07",
   "https://data.nhm.ac.uk/media/6819f3c1-5c1f-4086-8249-4e994bda4265",
   "https://data.nhm.ac.uk/media/971366f2-1a9a-4d9d-bdf7-36997d00afcb",
+  // checked 10 Oct 2026
+  "https://data.nhm.ac.uk/media/12bae07a-3ddf-411b-9f0f-a03f053316af",
+  "https://data.nhm.ac.uk/media/213d3a96-18e3-41a3-8ac8-d3e65b18cdb5",
+  "https://data.nhm.ac.uk/media/ad651e51-68b5-4671-934d-88ae84e09ab5",
+  "https://data.nhm.ac.uk/media/d097fc14-fbf0-4bf7-89ff-eedc2cd26589",
+  "https://data.nhm.ac.uk/media/3ee7dd54-9c36-4dce-9315-9727f3e79479",
+  "https://data.nhm.ac.uk/media/793c936a-ce42-4153-87eb-8ff2e5b1a808",
+  "https://data.nhm.ac.uk/media/1d1e3218-f0f9-4227-8a5f-350039c996aa",
+  "https://data.nhm.ac.uk/media/51743de0-ea9e-4112-8455-833f5d7c62db",
+  "https://data.nhm.ac.uk/media/d47ddb9f-0603-4c33-ac82-74004308e5dd",
+  "https://data.nhm.ac.uk/media/3bd8e89a-cf76-439a-858f-ed82f7b26b95",
+  "https://data.nhm.ac.uk/media/56bcb098-9a3d-410d-a0e8-4c6fd7be7299",
+  "https://data.nhm.ac.uk/media/e40e7540-fcbe-40a8-a2c7-878deca4d06d",
+  "https://data.nhm.ac.uk/media/181b1cc9-c77d-4541-a182-78e8df8675b3",
+  "https://data.nhm.ac.uk/media/0c3c41d8-3198-4a67-9c03-25f65108e325",
+  "https://data.nhm.ac.uk/media/4b3940b3-46f3-43e9-b6e8-ae7c1f1cfa52",
+  "https://data.nhm.ac.uk/media/29b823bb-54df-48d4-b040-67f23af97a5c",
+  "https://data.nhm.ac.uk/media/47c986d1-e961-4495-9e43-f8c3fd8942d6",
+  "https://data.nhm.ac.uk/media/121347fd-f8aa-4e4f-91ef-e8e85f4f282b",
+  "https://data.nhm.ac.uk/media/0d20d868-976d-4e97-a063-6ddc964b3d98",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/604866869/original.jpg",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/605042513/original.jpg",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/605095028/original.jpg",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/606445390/original.jpg",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/604437711/original.jpg",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/633028127/original.jpg",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/605611868/original.jpg",
+  "https://collections.nmnh.si.edu/media/?i=7004834&h=2000",
+  "https://data.nhm.ac.uk/media/938de13e-c968-4e2a-9989-668106b5d56f",
+  "https://data.nhm.ac.uk/media/c5e402cb-4154-453b-9cf9-b08c6469d944",
+  "https://zenodo.org/record/2714333/files/CAM040867_d.JPG",
+  "https://iiif.rbge.org.uk/herb/iiif/E01152744/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01152440/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01152574/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01358530/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01152557/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01152840/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01152483/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01021721/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01582484/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E01358602/full/1600,/0/default.jpg",
+  "https://iiif.rbge.org.uk/herb/iiif/E00826911/full/1600,/0/default.jpg",
+  "https://d2jcv3kl45hlgi.cloudfront.net/6a94f2fa94ff45fce06189e4c678c02a.jpg",
+  "https://d2jcv3kl45hlgi.cloudfront.net/62caa53d6724d2277748ec67dcf74a13.jpg",
+  "https://d2jcv3kl45hlgi.cloudfront.net/4d2cb7fd804c0aaa4aae3a3587bc9d3e.jpg",
+  "https://d2jcv3kl45hlgi.cloudfront.net/3edb1cb3242cb1268f0c2d6ff6d9bb21.jpg",
+  "https://data.nhm.ac.uk/media/037179c4-c41f-4066-bcbd-80efbf9a02c6",
+  "https://inaturalist-open-data.s3.amazonaws.com/photos/661931788/original.jpg",
+  "https://data.nhm.ac.uk/media/07dcfb60-baf8-4b15-a736-cd7f572759c9",
+  "https://data.nhm.ac.uk/media/38841039-bd6a-4276-9d3f-762185d18edc",
 ]);
 
 // Photos chosen by hand in the photo picker (#pick). The game uses these first and doesn't search at all.
@@ -347,14 +397,16 @@ export async function findPhoto(getJSON, key, group, sci) {
   return { photo: null, log };
 }
 
-// For the photo picker: up to 3 options from each place, in the same order as findPhoto, at most 6 in all.
+// For the photo picker: a mix of UK specimens, specimens elsewhere and living examples (not for fossils),
+// 2 of each where possible and up to 6 in all, so there's always a choice of kinds.
 export async function photoOptions(getJSON, key, group) {
-  const out = [];
-  for (const t of tiersFor(group)) {
-    if (out.length >= 6) break;
-    try { const e = await searchTier(getJSON, t, key, 3); e.photos.slice(0, 6 - out.length).forEach((p) => out.push({ ...p, kind: t.kind })); } catch {}
-  }
-  return out;
+  const tiers = group === "fossil" ? [TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
+  const found = await Promise.all(tiers.map((t) => searchTier(getJSON, t, key, 6).then((e) => e.photos.map((p) => ({ ...p, kind: t.kind }))).catch(() => [])));
+  const each = Math.ceil(6 / tiers.length), out = [];
+  found.forEach((list) => out.push(...list.slice(0, each)));
+  for (const list of found) for (const p of list.slice(each)) if (out.length < 6) out.push(p); // top up from tiers with spare
+  return out.slice(0, 6);
 }
+
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
 export const thumbUrl = (url, w = 600) => `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
