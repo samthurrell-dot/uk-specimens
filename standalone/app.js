@@ -116,7 +116,7 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
 let day = null, prog = null, step = 0, pending = null, started = false;
 
 async function buildDay(onProgress) {
-  const cached = local.get(`uks.day6.${puzzle}`);
+  const cached = local.get(`uks.day7.${puzzle}`);
   if (cached && cached.chain && cached.chain.length === ROUNDS + 1) return cached;
   const order = candidateOrder(puzzle), found = new Map();
   let failed = 0, tried = 0;
@@ -130,7 +130,7 @@ async function buildDay(onProgress) {
   const chain = buildChain(order, (i) => (found.get(i) || {}).count);
   if (chain.length < ROUNDS + 1) throw new Error(failed === tried ? "unreachable" : "short");
   const d = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };
-  local.set(`uks.day6.${puzzle}`, d);
+  local.set(`uks.day7.${puzzle}`, d);
   return d;
 }
 async function play() {
@@ -138,7 +138,7 @@ async function play() {
     app.innerHTML = `<p class="muted" id="loading">Asking the museums for today's numbers…</p>`;
     try { day = await buildDay((n) => { const l = $("#loading"); if (l) l.textContent = `Asking the museums for today's numbers… (${Math.min(n, ROUNDS + 1)} of ${ROUNDS + 1})`; }); }
     catch (e) { return errorBox(e.message, play); }
-    prog = local.get(`uks.prog.${puzzle}`) || { marks: [], guesses: [] };
+    prog = local.get(`uks.prog2.${puzzle}`) || { marks: [], guesses: [] };
     step = prog.marks.length;
   }
   if (route() !== "play") return;
@@ -182,10 +182,10 @@ function guess(g) {
   if (prog.marks.length !== step) return;
   const right = isRight(day.chain[step].count, day.chain[step + 1].count, g);
   prog.guesses.push(g); prog.marks.push(right ? 1 : 0);
-  local.set(`uks.prog.${puzzle}`, prog);
+  local.set(`uks.prog2.${puzzle}`, prog);
   if (prog.marks.length === ROUNDS) {
     const h = local.get("uks.history") || {};
-    if (!(puzzle in h)) { h[puzzle] = prog.marks.reduce((x, y) => x + y, 0); local.set("uks.history", h); }
+    h[puzzle] = prog.marks.reduce((x, y) => x + y, 0); local.set("uks.history", h);
   }
   pending = { right }; game();
 }
@@ -332,7 +332,7 @@ function learnView() {
     <h2>About the photos</h2>
     <p>Photos come from the museums' own records. Some museums photograph paperwork, like old registers and labels, as well as specimens. The game tries to skip those by checking each photo's description, but some will still slip through. If you spot one, tap "Not a specimen?" and it'll be hidden on your phone.</p>
     <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, birds, reptiles, amphibians, plants and fungi it shows a living example first, as preserved ones, eggs and pressed or dried specimens can be upsetting or hard to make out. Where it can, it uses the species' main picture from Wikipedia, labelled "From Wikipedia" (usually a photo of a living example, sometimes a painting or a museum display). Counts are always UK specimens only.</p>
-    <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species) · <a href="#pick">Photo picker</a> (choose the photo each species uses).</p>
+    <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species) · <a href="#pick">Photo picker</a> (choose the photo each species uses) · <a href="#sim">Simulation</a> (check how hard the next 30 puzzles are).</p>
     <p class="small muted">Counts are approximate and change as museums add records. Group colours are from Sanzo Wada's <i>A Dictionary of Color Combinations</i>; screen colours are approximate.</p>
     <div class="row"><a class="btn" href="#play">Play today's puzzle</a></div>
   </section>`;
@@ -440,13 +440,41 @@ async function pickView() {
   });
 }
 
+/* ---------- simulation (for testing difficulty with the real counts) ---------- */
+async function simView() {
+  app.innerHTML = `<section class="stack"><h1 class="title">Simulation</h1>
+    <p>This builds the next 30 daily puzzles from today's real counts, and estimates how two kinds of player would score. It's for checking the game stays fun.</p>
+    <p class="muted" id="loading">Looking up every species…</p><div id="out"></div></section>`;
+  let done = 0;
+  const got = await pool(SPECIES.map((_, i) => i), 3, async (i) => {
+    const r = await lookup(i, false); done++; const l = $("#loading"); if (l) l.textContent = `Looking up every species… ${done} of ${SPECIES.length}`; return r;
+  });
+  if (got.every((g) => g === undefined)) return errorBox("unreachable", simView);
+  const counts = {}; got.forEach((g, i) => { if (g) counts[SPECIES[i][1]] = g.count; });
+  const days = simulate(counts, puzzle, 30), sum = simSummary(days), x = (r) => (r >= 10 ? Math.round(r) : r.toFixed(r < 2 ? 2 : 1)) + "x";
+  const lines = [`Simulation ${new Date().toLocaleString("en-GB")} · puzzles ${puzzle} to ${puzzle + 29} · ${Object.keys(counts).length} species with counts`,
+    `Average gap by guess: ${sum.byStep.map(x).join(", ")}`,
+    `Expected score: keen ${sum.keen.toFixed(1)}/10, casual ${sum.casual.toFixed(1)}/10`,
+    `Days ending on an easy pair (>1.6x): ${sum.easyEnd}/${sum.days} · failed days: ${sum.failed}`,
+    `"More" answers per day: ${sum.ups.toFixed(1)} · same-group pairs per day: ${sum.sameGroup.toFixed(1)}`,
+    `Different species used: ${sum.species}/${SPECIES.length} · most used: ${sum.most.join(", ")}`, "",
+    ...days.map((d) => d.failed ? `No. ${d.puzzle}: couldn't build` : `No. ${d.puzzle} (keen ${d.keen.toFixed(1)}, casual ${d.casual.toFixed(1)}): ${d.names.map((n, k) => `${n} ${d.counts[k]}`).join(" > ")}`),
+    "", "Counts: " + JSON.stringify(counts)];
+  $("#loading").textContent = "Done.";
+  $("#out").innerHTML = `<p class="rank">Keen player ~${sum.keen.toFixed(1)}/10 · Casual player ~${sum.casual.toFixed(1)}/10</p>
+    <div class="row"><button class="btn" type="button" id="copysim">Copy report</button></div>
+    <p class="small muted">Paste the report into the chat with Claude.</p>
+    <ol class="bars">${sum.byStep.map((g, k) => `<li><span class="rk">${k + 1}</span><span class="nm">Guess ${k + 1}<span class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.log(g) / Math.log(6) * 100).toFixed(0)}%;background:var(--accent)"></i></span></span><span class="ct">${x(g)} apart</span></li>`).join("")}</ol>`;
+  $("#copysim").onclick = async () => { try { await navigator.clipboard.writeText(lines.join("\n")); toast("Report copied"); } catch { toast("Couldn't copy, sorry"); } };
+}
+
 const TABS = [["play", "Play"], ["practice", "Practice"], ["explore", "Explore"], ["learn", "Learn"]];
-const route = () => { const r = location.hash.replace("#", ""); return r === "check" || r === "pick" || TABS.some(([k]) => k === r) ? r : "play"; };
+const route = () => { const r = location.hash.replace("#", ""); return r === "check" || r === "pick" || r === "sim" || TABS.some(([k]) => k === r) ? r : "play"; };
 function render() {
   const r = route();
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<a href="#${k}" role="tab" aria-selected="${k === r}">${l}</a>`).join("");
   window.scrollTo(0, 0);
-  ({ play, practice: practiceView, explore: exploreView, learn: learnView, check: checkView, pick: pickView })[r]();
+  ({ play, practice: practiceView, explore: exploreView, learn: learnView, check: checkView, pick: pickView, sim: simView })[r]();
 }
 window.addEventListener("hashchange", render);
 render();

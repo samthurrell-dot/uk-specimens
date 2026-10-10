@@ -159,6 +159,7 @@ export const POOL = 36;
 // 25% apart by the last guess. countOf(i) is the species' count (0 or null = can't be used).
 // Same inputs always give the same chain, so everyone gets the same puzzle.
 export const GAP_START = 4, GAP_END = 1.25;
+const START_ANYWHERE = true, CROWD = 0.15; // tuned with test/simulate.mjs
 export function buildChain(order, countOf) {
   const pool = order.filter((i) => countOf(i) > 0);
   if (pool.length < ROUNDS + 1) return pool;
@@ -167,7 +168,10 @@ export function buildChain(order, countOf) {
   const bySize = [...pool].sort((x, y) => countOf(x) - countOf(y));
   const mid = bySize.slice(Math.floor(bySize.length / 3), Math.ceil((bySize.length * 2) / 3));
   const medianCount = countOf(bySize[Math.floor(bySize.length / 2)]);
-  const out = [mid[Math.floor(rng() * mid.length)]], used = new Set(out);
+  // species with lots of near neighbours would otherwise be picked almost every day, so they pay a small penalty
+  const near = new Map(pool.map((i) => [i, pool.filter((j) => j !== i && Math.abs(Math.log(countOf(j) / countOf(i))) < Math.log(1.6)).length]));
+  const avgNear = [...near.values()].reduce((x, y) => x + y, 0) / pool.length || 1;
+  const out = [START_ANYWHERE ? pool[Math.floor(rng() * pool.length)] : mid[Math.floor(rng() * mid.length)]], used = new Set(out);
   for (let k = 0; k < ROUNDS; k++) {
     const prev = out[out.length - 1], a = countOf(prev), group = SPECIES[prev][2];
     // built backwards: the close pairs (for the end of the game) are chosen first, while the most species are free
@@ -180,7 +184,7 @@ export function buildChain(order, countOf) {
       const b = countOf(i);
       if (b === a) continue;
       const gap = Math.abs(Math.log(b / a));
-      const score = Math.abs(gap - target) + (SPECIES[i][2] === group ? 0.35 : 0) + ((b > a) !== wantMore ? 0.4 : 0) + rng() * 0.1;
+      const score = Math.abs(gap - target) + (SPECIES[i][2] === group ? 0.35 : 0) + ((b > a) !== wantMore ? 0.4 : 0) + CROWD * Math.max(0, near.get(i) / avgNear - 1) + rng() * 0.1;
       if (score < bestScore) { bestScore = score; best = i; }
     }
     if (best == null) break;
@@ -194,6 +198,46 @@ export function buildChain(order, countOf) {
 export function isRight(prev, next, guess) {
   if (next === prev) return guess === "more" || guess === "fewer";
   return next > prev ? guess === "more" : guess === "fewer";
+}
+
+// ---- simulating future puzzles (to check the game stays fun) ----
+// A player is modelled as guessing each count with some error: "keen" players are usually within about 1.6x,
+// "casual" players within about 2.7x. The chance of getting a pair right then depends on how far apart it is.
+const erf = (x) => { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; };
+export const chanceRight = (a, b, sigma) => 0.5 * (1 + erf(Math.abs(Math.log(b / a)) / (sigma * 2)));
+export const PLAYERS = { keen: 0.5, casual: 1.0 };
+// countBySci: { "Passer domesticus": 3334, ... }. Mirrors how the page builds each day (batches of 12 until POOL found).
+export function simulate(countBySci, fromPuzzle, days = 30) {
+  const all = (i) => countBySci[SPECIES[i][1]] || 0, out = [];
+  for (let p = fromPuzzle; p < fromPuzzle + days; p++) {
+    const order = candidateOrder(p), found = new Set();
+    for (let s = 0; s < order.length && found.size < POOL; s += 12) order.slice(s, s + 12).forEach((i) => all(i) > 0 && found.add(i));
+    const chain = buildChain(order, (i) => (found.has(i) ? all(i) : 0));
+    if (chain.length < ROUNDS + 1) { out.push({ puzzle: p, failed: true }); continue; }
+    const c = chain.map(all), gaps = [], score = { keen: 0, casual: 0 };
+    let ups = 0, sameGroup = 0;
+    for (let k = 0; k < ROUNDS; k++) {
+      gaps.push(Math.max(c[k], c[k + 1]) / Math.min(c[k], c[k + 1]));
+      if (c[k + 1] > c[k]) ups++;
+      if (SPECIES[chain[k]][2] === SPECIES[chain[k + 1]][2]) sameGroup++;
+      for (const [who, sg] of Object.entries(PLAYERS)) score[who] += chanceRight(c[k], c[k + 1], sg);
+    }
+    out.push({ puzzle: p, chain, names: chain.map((i) => SPECIES[i][0]), counts: c, gaps, ups, sameGroup, keen: score.keen, casual: score.casual });
+  }
+  return out;
+}
+export function simSummary(days) {
+  const ok = days.filter((d) => !d.failed), n = ok.length || 1, avg = (f) => ok.reduce((s, d) => s + f(d), 0) / n;
+  const byStep = Array.from({ length: ROUNDS }, (_, k) => Math.exp(avg((d) => Math.log(d.gaps[k]))));
+  const seen = new Map(); ok.forEach((d) => d.chain.forEach((i) => seen.set(i, (seen.get(i) || 0) + 1)));
+  const most = [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([i, k]) => `${SPECIES[i][0]} ${k}x`);
+  return {
+    days: days.length, failed: days.length - ok.length, byStep,
+    keen: avg((d) => d.keen), casual: avg((d) => d.casual),
+    easyEnd: ok.filter((d) => d.gaps[ROUNDS - 1] > 1.6).length, // days whose last pair is still more than 60% apart
+    ups: avg((d) => d.ups), sameGroup: avg((d) => d.sameGroup),
+    species: seen.size, most,
+  };
 }
 
 export const fmt = (n) => Number(n).toLocaleString("en-GB");
