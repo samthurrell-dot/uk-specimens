@@ -24,7 +24,7 @@ const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=$
 // Returns the species with its count, null if it has no records, or undefined if GBIF couldn't be reached.
 async function lookup(i, withPhoto = true) {
   const [name, sci, group, fact, rank] = SPECIES[i];
-  const ck = `uks.sp5.${sci}`, cached = local.get(ck);
+  const ck = `uks.sp6.${sci}`, cached = local.get(ck);
   if (cached && Date.now() - cached.t < WEEK && (!withPhoto || cached.photoChecked)) return cached.none ? null : { ...cached.v, i };
   try {
     const key = await matchName(sci, rank || "species");
@@ -80,7 +80,7 @@ function card(s, opts = {}) {
 // "Not a specimen?" hides that photo on this device and remembers it, so it can be fed back into the filter later
 function wireReports(root) {
   root.querySelectorAll("[data-report]").forEach((b) => (b.onclick = () => {
-    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp5.${sci}`);
+    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp6.${sci}`);
     bad[sci] = c && c.v && c.v.photo ? c.v.photo.url : true; local.set("uks.badphotos", bad);
     const art = b.closest(".card"); art.querySelector(".pic").className = "pic none"; art.querySelector(".pic").innerHTML = ""; b.closest(".credit").remove();
     toast("Thanks. That photo is hidden on this phone.");
@@ -116,7 +116,7 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
 let day = null, prog = null, step = 0, pending = null, started = false;
 
 async function buildDay(onProgress) {
-  const cached = local.get(`uks.day5.${puzzle}`);
+  const cached = local.get(`uks.day6.${puzzle}`);
   if (cached && cached.chain && cached.chain.length === ROUNDS + 1) return cached;
   const order = candidateOrder(puzzle), found = new Map();
   let failed = 0, tried = 0;
@@ -130,7 +130,7 @@ async function buildDay(onProgress) {
   const chain = buildChain(order, (i) => found.has(i));
   if (chain.length < ROUNDS + 1) throw new Error(failed === tried ? "unreachable" : "short");
   const d = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };
-  local.set(`uks.day5.${puzzle}`, d);
+  local.set(`uks.day6.${puzzle}`, d);
   return d;
 }
 async function play() {
@@ -389,7 +389,7 @@ async function checkView() {
   };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Report copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); } };
   // clear cached photos so the game picks up the new ones
-  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp5.${sci}`); } catch {} });
+  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp6.${sci}`); } catch {} });
 }
 
 /* ---------- photo picker (for choosing the photo each species uses) ---------- */
