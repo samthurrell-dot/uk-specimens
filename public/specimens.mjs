@@ -153,15 +153,40 @@ export function candidateOrder(puzzle) {
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   return pool;
 }
-export function buildChain(order, hasRecords) {
-  const ok = order.filter(hasRecords), out = [];
-  while (out.length < ROUNDS + 1 && ok.length) {
-    const last = out.length ? SPECIES[out[out.length - 1]][2] : null;
-    let k = ok.findIndex((i) => SPECIES[i][2] !== last);
-    if (k < 0) k = 0;
-    out.push(ok.splice(k, 1)[0]);
+// How many species to look up each day before choosing the chain: enough to find close pairs.
+export const POOL = 36;
+// Each pair is chosen by how far apart its counts are: about 4 times as many at the start, narrowing to about
+// 25% apart by the last guess. countOf(i) is the species' count (0 or null = can't be used).
+// Same inputs always give the same chain, so everyone gets the same puzzle.
+export const GAP_START = 4, GAP_END = 1.25;
+export function buildChain(order, countOf) {
+  const pool = order.filter((i) => countOf(i) > 0);
+  if (pool.length < ROUNDS + 1) return pool;
+  const rng = mkRng(order[0] * 7919 + order[1] * 31 + 1);
+  // start from a middling count, so there's room to go either way
+  const bySize = [...pool].sort((x, y) => countOf(x) - countOf(y));
+  const mid = bySize.slice(Math.floor(bySize.length / 3), Math.ceil((bySize.length * 2) / 3));
+  const medianCount = countOf(bySize[Math.floor(bySize.length / 2)]);
+  const out = [mid[Math.floor(rng() * mid.length)]], used = new Set(out);
+  for (let k = 0; k < ROUNDS; k++) {
+    const prev = out[out.length - 1], a = countOf(prev), group = SPECIES[prev][2];
+    // built backwards: the close pairs (for the end of the game) are chosen first, while the most species are free
+    const target = Math.log(GAP_END) + (Math.log(GAP_START) - Math.log(GAP_END)) * (k / (ROUNDS - 1));
+    // lean back towards the middle so the chain doesn't run off to the biggest or smallest counts
+    const wantMore = rng() < (a < medianCount ? 0.75 : 0.25);
+    let best = null, bestScore = Infinity;
+    for (const i of pool) {
+      if (used.has(i)) continue;
+      const b = countOf(i);
+      if (b === a) continue;
+      const gap = Math.abs(Math.log(b / a));
+      const score = Math.abs(gap - target) + (SPECIES[i][2] === group ? 0.35 : 0) + ((b > a) !== wantMore ? 0.4 : 0) + rng() * 0.1;
+      if (score < bestScore) { bestScore = score; best = i; }
+    }
+    if (best == null) break;
+    out.push(best); used.add(best);
   }
-  return out;
+  return out.reverse();
 }
 
 // guess is "more" or "fewer": does the next species have more or fewer records than the one before?

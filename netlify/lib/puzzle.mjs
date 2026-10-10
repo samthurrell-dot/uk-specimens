@@ -1,7 +1,7 @@
 // Builds and stores each day's chain of species with their counts, so every player gets the same numbers all day
 // and GBIF is only asked once per puzzle.
 import { getStore } from "@netlify/blobs";
-import { SPECIES, ROUNDS, candidateOrder, buildChain } from "../../public/specimens.mjs";
+import { SPECIES, ROUNDS, POOL, candidateOrder, buildChain } from "../../public/specimens.mjs";
 import { matchName, countFor, photoFor, gbifLink } from "./gbif.mjs";
 
 // Tests swap in an in-memory store by setting globalThis.__TEST_STORE__.
@@ -50,10 +50,10 @@ export async function getPuzzle(store, puzzle) {
   for (let start = 0; start < order.length; start += 16) {
     const got = await Promise.all(order.slice(start, start + 16).map((i) => lookup(store, i)));
     got.filter(Boolean).forEach((g) => found.set(g.i, g));
-    if (found.size >= ROUNDS + 6) break;
+    if (found.size >= POOL) break;
     if (found.size === 0) break; // nothing worked in the first batch: GBIF is probably down, so stop rather than time out
   }
-  const chain = buildChain(order, (i) => found.has(i));
+  const chain = buildChain(order, (i) => (found.get(i) || {}).count);
   if (chain.length < ROUNDS + 1) throw new Error("Not enough species could be looked up");
 
   const record = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };

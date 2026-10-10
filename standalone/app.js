@@ -125,9 +125,9 @@ async function buildDay(onProgress) {
     const got = await pool(order.slice(start, start + 12), 4, (i) => lookup(i));
     got.forEach((g) => { tried++; if (g === undefined) failed++; else if (g) found.set(g.i, g); });
     onProgress(found.size);
-    if (found.size >= ROUNDS + 6 || !found.size) break;
+    if (found.size >= POOL || !found.size) break;
   }
-  const chain = buildChain(order, (i) => found.has(i));
+  const chain = buildChain(order, (i) => (found.get(i) || {}).count);
   if (chain.length < ROUNDS + 1) throw new Error(failed === tried ? "unreachable" : "short");
   const d = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };
   local.set(`uks.day6.${puzzle}`, d);
@@ -157,6 +157,7 @@ function start() {
     <ul class="rules">
       <li>You see a species and how many UK specimens there are.</li>
       <li>Guess if the next one has <b>more</b> or <b>fewer</b>.</li>
+      <li>The pairs get closer as you go, so it gets harder.</li>
       <li>Ten guesses. One go a day. New puzzle at midnight UK time.</li>
     </ul>
     <button class="btn" type="button" id="go">Start today's puzzle</button>

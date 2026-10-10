@@ -23,10 +23,21 @@ ok(`${SPECIES.length} species, no duplicates, all have facts`);
 assert.equal(isRight(10, 20, "more"), true); assert.equal(isRight(10, 20, "fewer"), false);
 assert.equal(isRight(20, 10, "fewer"), true); assert.equal(isRight(5, 5, "more"), true); assert.equal(isRight(5, 5, "fewer"), true);
 ok("marking rules, including ties");
-const chain = buildChain(candidateOrder(1), () => true);
-assert.equal(chain.length, ROUNDS + 1);
-for (let k = 1; k < chain.length; k++) assert.notEqual(SPECIES[chain[k]][2], SPECIES[chain[k - 1]][2], "two in a row from one group");
-ok("daily chain has 11 species and mixes groups");
+const fakeCount = (i) => Math.round(Math.exp(((i * 2654435761) % 1000) / 1000 * 12));
+let gapsFirst = 0, gapsLast = 0, ups = 0, repeats = 0;
+for (let p = 1; p <= 60; p++) {
+  const chain = buildChain(candidateOrder(p).slice(0, 36), fakeCount);
+  assert.equal(chain.length, ROUNDS + 1);
+  assert.equal(new Set(chain).size, chain.length, "a species repeated");
+  assert.deepEqual(buildChain(candidateOrder(p).slice(0, 36), fakeCount), chain, "not repeatable");
+  const r = (k) => Math.max(fakeCount(chain[k]), fakeCount(chain[k + 1])) / Math.min(fakeCount(chain[k]), fakeCount(chain[k + 1]));
+  gapsFirst += r(0) / 60; gapsLast += r(ROUNDS - 1) / 60;
+  for (let k = 0; k < ROUNDS; k++) { if (fakeCount(chain[k + 1]) > fakeCount(chain[k])) ups++; if (SPECIES[chain[k]][2] === SPECIES[chain[k + 1]][2]) repeats++; }
+}
+console.log(`    first pair ~${gapsFirst.toFixed(1)}x apart, last pair ~${gapsLast.toFixed(2)}x apart, ${Math.round(ups / 6)}% "more", ${(repeats / 6).toFixed(0)}% same-group pairs`);
+assert.ok(gapsFirst > 2.5 && gapsLast < 1.6, "pairs don't get closer");
+assert.ok(ups / 600 > 0.35 && ups / 600 < 0.65, "answers are lopsided");
+ok("daily chain: 11 species, repeatable, pairs narrow from wide to close, mixed answers");
 
 // --- GBIF down: friendly error, nothing saved
 {
