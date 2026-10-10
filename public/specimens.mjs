@@ -359,14 +359,15 @@ export function examine(results = [], max = 1) {
 }
 
 // Where to look. Usually: UK museum specimens, then specimens anywhere, then photos of living examples.
-// Mammals, reptiles and amphibians look for living examples first, as preserved ones can be upsetting to look at.
+// Mammals, birds, reptiles and amphibians look for living examples first, as preserved ones (and eggs) can be upsetting
+// or dull to look at. For those, the species' main Wikipedia photo is tried before anything else.
 const SPECIMEN_TYPES = "basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
 const TIER = {
   uk: { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}`, limit: 50 },
   world: { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES, limit: 50 },
   living: { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", limit: 20 },
 };
-export const LIVING_FIRST = ["mammal", "herp"];
+export const LIVING_FIRST = ["mammal", "herp", "bird"];
 export const tiersFor = (group) =>
   group === "fossil" ? [TIER.uk, TIER.world] : LIVING_FIRST.includes(group) ? [TIER.living, TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
 export const PHOTO_TIERS = [TIER.uk, TIER.world, TIER.living];
@@ -383,10 +384,31 @@ async function searchTier(getJSON, t, key, max) {
   return e;
 }
 
+// The main photo on the species' English Wikipedia page, if it's on Wikimedia Commons with an open licence.
+// These are chosen by editors to show the animal or plant clearly, so they're better than random sighting photos.
+const strip = (h) => String(h || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+export async function wikiPhoto(getJSON, sci) {
+  const q = await getJSON(`https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&prop=pageimages&piprop=name&titles=${encodeURIComponent(sci)}`);
+  const page = Object.values((q && q.query && q.query.pages) || {})[0];
+  if (!page || "missing" in page || !page.pageimage || /\.(svg|gif|tif)$/i.test(page.pageimage)) return null;
+  const f = await getJSON(`https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=800&titles=${encodeURIComponent("File:" + page.pageimage)}`);
+  const ii = ((Object.values((f && f.query && f.query.pages) || {})[0] || {}).imageinfo || [])[0];
+  if (!ii) return null; // not on Commons, e.g. a non-free image held by Wikipedia itself
+  const md = ii.extmetadata || {}, lic = strip(md.LicenseShortName && md.LicenseShortName.value);
+  if (!/^(cc|public domain|pd)/i.test(lic) || /\bnd\b|-nd/i.test(lic)) return null;
+  const url = ii.thumburl || ii.url;
+  if (BAD_PHOTOS.has(url) || BAD_PHOTOS.has(ii.url)) return null;
+  return { url, credit: strip(md.Artist && md.Artist.value).slice(0, 80) || "Wikimedia Commons", licence: lic, source: ii.descriptionurl || "", occurrence: null, country: "" };
+}
+
 // getJSON is passed in so the page and the server can share this. Returns { photo, log } where log says what each tier found.
 export async function findPhoto(getJSON, key, group, sci) {
   if (sci && Object.prototype.hasOwnProperty.call(PICKED, sci)) return { photo: PICKED[sci], log: [{ kind: "picked", found: !!PICKED[sci] }] };
   const log = [];
+  if (sci && LIVING_FIRST.includes(group)) {
+    try { const w = await wikiPhoto(getJSON, sci); log.push({ kind: "wiki", found: !!w }); if (w) return { photo: { ...w, kind: "wiki" }, log }; }
+    catch (err) { log.push({ kind: "wiki", error: String(err && err.message || err) }); }
+  }
   for (const t of tiersFor(group)) {
     try {
       const e = await searchTier(getJSON, t, key, 1);
@@ -399,7 +421,12 @@ export async function findPhoto(getJSON, key, group, sci) {
 
 // For the photo picker: a mix of UK specimens, specimens elsewhere and living examples (not for fossils),
 // 2 of each where possible and up to 6 in all, so there's always a choice of kinds.
-export async function photoOptions(getJSON, key, group) {
+export async function photoOptions(getJSON, key, group, sci) {
+  const wiki = sci && group !== "fossil" ? await wikiPhoto(getJSON, sci).catch(() => null) : null;
+  const rest = await photoOptionsGbif(getJSON, key, group);
+  return wiki ? [{ ...wiki, kind: "wiki" }, ...rest.slice(0, 5)] : rest;
+}
+async function photoOptionsGbif(getJSON, key, group) {
   const tiers = group === "fossil" ? [TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
   const found = await Promise.all(tiers.map((t) => searchTier(getJSON, t, key, 6).then((e) => e.photos.map((p) => ({ ...p, kind: t.kind }))).catch(() => [])));
   const each = Math.ceil(6 / tiers.length), out = [];
@@ -409,4 +436,8 @@ export async function photoOptions(getJSON, key, group) {
 }
 
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
-export const thumbUrl = (url, w = 600) => `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
+// Wikimedia images are already sized; IIIF image servers (e.g. RBGE) can be asked for a smaller size directly.
+export const thumbUrl = (url, w = 600) =>
+  /upload\.wikimedia\.org/.test(url) ? url
+  : /\/iiif\/.+\/full\/[^/]+\/0\/default\.jpg$/.test(url) ? url.replace(/\/full\/[^/]+\/0\//, `/full/${w},/0/`)
+  : `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;

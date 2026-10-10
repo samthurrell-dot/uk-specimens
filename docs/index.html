@@ -532,14 +532,15 @@ function examine(results = [], max = 1) {
 }
 
 // Where to look. Usually: UK museum specimens, then specimens anywhere, then photos of living examples.
-// Mammals, reptiles and amphibians look for living examples first, as preserved ones can be upsetting to look at.
+// Mammals, birds, reptiles and amphibians look for living examples first, as preserved ones (and eggs) can be upsetting
+// or dull to look at. For those, the species' main Wikipedia photo is tried before anything else.
 const SPECIMEN_TYPES = "basisOfRecord=PRESERVED_SPECIMEN&basisOfRecord=FOSSIL_SPECIMEN&basisOfRecord=MATERIAL_SAMPLE";
 const TIER = {
   uk: { kind: "uk", label: "UK specimen", query: `publishingCountry=GB&${SPECIMEN_TYPES}`, limit: 50 },
   world: { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES, limit: 50 },
   living: { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", limit: 20 },
 };
-const LIVING_FIRST = ["mammal", "herp"];
+const LIVING_FIRST = ["mammal", "herp", "bird"];
 const tiersFor = (group) =>
   group === "fossil" ? [TIER.uk, TIER.world] : LIVING_FIRST.includes(group) ? [TIER.living, TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
 const PHOTO_TIERS = [TIER.uk, TIER.world, TIER.living];
@@ -556,10 +557,31 @@ async function searchTier(getJSON, t, key, max) {
   return e;
 }
 
+// The main photo on the species' English Wikipedia page, if it's on Wikimedia Commons with an open licence.
+// These are chosen by editors to show the animal or plant clearly, so they're better than random sighting photos.
+const strip = (h) => String(h || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+async function wikiPhoto(getJSON, sci) {
+  const q = await getJSON(`https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&redirects=1&prop=pageimages&piprop=name&titles=${encodeURIComponent(sci)}`);
+  const page = Object.values((q && q.query && q.query.pages) || {})[0];
+  if (!page || "missing" in page || !page.pageimage || /\.(svg|gif|tif)$/i.test(page.pageimage)) return null;
+  const f = await getJSON(`https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=800&titles=${encodeURIComponent("File:" + page.pageimage)}`);
+  const ii = ((Object.values((f && f.query && f.query.pages) || {})[0] || {}).imageinfo || [])[0];
+  if (!ii) return null; // not on Commons, e.g. a non-free image held by Wikipedia itself
+  const md = ii.extmetadata || {}, lic = strip(md.LicenseShortName && md.LicenseShortName.value);
+  if (!/^(cc|public domain|pd)/i.test(lic) || /\bnd\b|-nd/i.test(lic)) return null;
+  const url = ii.thumburl || ii.url;
+  if (BAD_PHOTOS.has(url) || BAD_PHOTOS.has(ii.url)) return null;
+  return { url, credit: strip(md.Artist && md.Artist.value).slice(0, 80) || "Wikimedia Commons", licence: lic, source: ii.descriptionurl || "", occurrence: null, country: "" };
+}
+
 // getJSON is passed in so the page and the server can share this. Returns { photo, log } where log says what each tier found.
 async function findPhoto(getJSON, key, group, sci) {
   if (sci && Object.prototype.hasOwnProperty.call(PICKED, sci)) return { photo: PICKED[sci], log: [{ kind: "picked", found: !!PICKED[sci] }] };
   const log = [];
+  if (sci && LIVING_FIRST.includes(group)) {
+    try { const w = await wikiPhoto(getJSON, sci); log.push({ kind: "wiki", found: !!w }); if (w) return { photo: { ...w, kind: "wiki" }, log }; }
+    catch (err) { log.push({ kind: "wiki", error: String(err && err.message || err) }); }
+  }
   for (const t of tiersFor(group)) {
     try {
       const e = await searchTier(getJSON, t, key, 1);
@@ -572,7 +594,12 @@ async function findPhoto(getJSON, key, group, sci) {
 
 // For the photo picker: a mix of UK specimens, specimens elsewhere and living examples (not for fossils),
 // 2 of each where possible and up to 6 in all, so there's always a choice of kinds.
-async function photoOptions(getJSON, key, group) {
+async function photoOptions(getJSON, key, group, sci) {
+  const wiki = sci && group !== "fossil" ? await wikiPhoto(getJSON, sci).catch(() => null) : null;
+  const rest = await photoOptionsGbif(getJSON, key, group);
+  return wiki ? [{ ...wiki, kind: "wiki" }, ...rest.slice(0, 5)] : rest;
+}
+async function photoOptionsGbif(getJSON, key, group) {
   const tiers = group === "fossil" ? [TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
   const found = await Promise.all(tiers.map((t) => searchTier(getJSON, t, key, 6).then((e) => e.photos.map((p) => ({ ...p, kind: t.kind }))).catch(() => [])));
   const each = Math.ceil(6 / tiers.length), out = [];
@@ -582,7 +609,11 @@ async function photoOptions(getJSON, key, group) {
 }
 
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
-const thumbUrl = (url, w = 600) => `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
+// Wikimedia images are already sized; IIIF image servers (e.g. RBGE) can be asked for a smaller size directly.
+const thumbUrl = (url, w = 600) =>
+  /upload\.wikimedia\.org/.test(url) ? url
+  : /\/iiif\/.+\/full\/[^/]+\/0\/default\.jpg$/.test(url) ? url.replace(/\/full\/[^/]+\/0\//, `/full/${w},/0/`)
+  : `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
 
 // ---- no-server game ----
 // No-server version of More or less?, with Practice, Explore and Learn sections.
@@ -611,7 +642,7 @@ const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=$
 // Returns the species with its count, null if it has no records, or undefined if GBIF couldn't be reached.
 async function lookup(i, withPhoto = true) {
   const [name, sci, group, fact, rank] = SPECIES[i];
-  const ck = `uks.sp3.${sci}`, cached = local.get(ck);
+  const ck = `uks.sp4.${sci}`, cached = local.get(ck);
   if (cached && Date.now() - cached.t < WEEK && (!withPhoto || cached.photoChecked)) return cached.none ? null : { ...cached.v, i };
   try {
     const key = await matchName(sci, rank || "species");
@@ -641,19 +672,21 @@ const SHORT = { sea: "Sea life", herp: "Reptiles" };
 const CHIPS = [["all", "Everything"], ...Object.entries(GROUPS).map(([k, g]) => [k, SHORT[k] || g.label])];
 
 // try GBIF's resized copy first, then the original, then give up and show the group colour
+// a busy image server may refuse when lots load at once, so wait and try once more before giving up
 window.photoFailed = (img) => {
   if (img.dataset.orig && img.src !== img.dataset.orig) { img.src = img.dataset.orig; img.dataset.orig = ""; return; }
+  if (!img.dataset.retried) { img.dataset.retried = "1"; const src = img.src; setTimeout(() => { img.src = ""; img.src = src; }, 1500 + Math.random() * 2000); return; }
   const c = img.closest(".card"); c.querySelector(".credit")?.remove(); c.querySelector(".tag")?.remove();
   img.parentNode.className = "pic none"; img.remove();
 };
 function card(s, opts = {}) {
   const g = groupOf(s);
-  const p = s.photo, tag = p && p.kind === "living" ? "Living example" : p && p.kind === "world" ? "Specimen outside the UK" : "";
+  const p = s.photo, tag = p && (p.kind === "living" || p.kind === "wiki") ? "Living example" : p && p.kind === "world" ? "Specimen outside the UK" : "";
   const pic = p
-    ? `<div class="pic">${tag ? `<span class="tag">${tag}</span>` : ""}<img src="${esc(thumbUrl(p.url))}" data-orig="${esc(p.url.replace(/^http:/, "https:"))}" alt="${p.kind === "living" ? "Living" : "Museum specimen of"} ${esc(s.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="photoFailed(this)"></div>`
+    ? `<div class="pic">${tag ? `<span class="tag">${tag}</span>` : ""}<img src="${esc(thumbUrl(p.url))}" data-orig="${esc(p.url.replace(/^http:/, "https:"))}" alt="${p.kind === "living" || p.kind === "wiki" ? "Living" : "Museum specimen of"} ${esc(s.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="photoFailed(this)"></div>`
     : `<div class="pic none" style="background:${g.hex}"></div>`;
-  const where = p ? (p.kind === "living" ? "Not a museum specimen. Photo: " : p.kind === "world" ? `Specimen ${p.country ? `(${esc(p.country)}) ` : ""}from ` : "Photo: ") : "";
-  const credit = p ? `<p class="credit">${where}${esc(p.credit)} · ${esc(p.licence)} · <a href="https://www.gbif.org/occurrence/${encodeURIComponent(p.occurrence)}" target="_blank" rel="noopener">record</a>${p.kind === "living" ? "" : ` · <button class="tiny" type="button" data-report="${esc(s.sci)}">Not a specimen?</button>`}</p>` : "";
+  const where = p ? (p.kind === "living" || p.kind === "wiki" ? "Not a museum specimen. Photo: " : p.kind === "world" ? `Specimen ${p.country ? `(${esc(p.country)}) ` : ""}from ` : "Photo: ") : "";
+  const credit = p ? `<p class="credit">${where}${esc(p.credit)} · ${esc(p.licence)} · ${p.kind === "wiki" ? `<a href="${esc(p.source)}" target="_blank" rel="noopener">Wikimedia</a>` : `<a href="https://www.gbif.org/occurrence/${encodeURIComponent(p.occurrence)}" target="_blank" rel="noopener">record</a>`}${p.kind === "living" || p.kind === "wiki" ? "" : ` · <button class="tiny" type="button" data-report="${esc(s.sci)}">Not a specimen?</button>`}</p>` : "";
   const count = opts.hide
     ? `<p class="count hidden" aria-label="Unknown">?<small>specimens</small></p>`
     : `<p class="count">${fmt(s.count)}<small>specimen${s.count === 1 ? "" : "s"}</small></p>`;
@@ -665,7 +698,7 @@ function card(s, opts = {}) {
 // "Not a specimen?" hides that photo on this device and remembers it, so it can be fed back into the filter later
 function wireReports(root) {
   root.querySelectorAll("[data-report]").forEach((b) => (b.onclick = () => {
-    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp3.${sci}`);
+    const sci = b.dataset.report, bad = local.get("uks.badphotos") || {}, c = local.get(`uks.sp4.${sci}`);
     bad[sci] = c && c.v && c.v.photo ? c.v.photo.url : true; local.set("uks.badphotos", bad);
     const art = b.closest(".card"); art.querySelector(".pic").className = "pic none"; art.querySelector(".pic").innerHTML = ""; b.closest(".credit").remove();
     toast("Thanks. That photo is hidden on this phone.");
@@ -701,7 +734,7 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
 let day = null, prog = null, step = 0, pending = null, started = false;
 
 async function buildDay(onProgress) {
-  const cached = local.get(`uks.day3.${puzzle}`);
+  const cached = local.get(`uks.day4.${puzzle}`);
   if (cached && cached.chain && cached.chain.length === ROUNDS + 1) return cached;
   const order = candidateOrder(puzzle), found = new Map();
   let failed = 0, tried = 0;
@@ -715,7 +748,7 @@ async function buildDay(onProgress) {
   const chain = buildChain(order, (i) => found.has(i));
   if (chain.length < ROUNDS + 1) throw new Error(failed === tried ? "unreachable" : "short");
   const d = { puzzle, at: new Date().toISOString(), chain: chain.map((i) => found.get(i)) };
-  local.set(`uks.day3.${puzzle}`, d);
+  local.set(`uks.day4.${puzzle}`, d);
   return d;
 }
 async function play() {
@@ -915,7 +948,7 @@ function learnView() {
     <p>Most specimens are kept in stores rather than on display, but museums near Manchester show some of their collections, including <a href="https://www.museum.manchester.ac.uk/" target="_blank" rel="noopener">Manchester Museum</a> and <a href="https://www.liverpoolmuseums.org.uk/world-museum" target="_blank" rel="noopener">World Museum Liverpool</a>. The <a href="https://www.nhm.ac.uk/" target="_blank" rel="noopener">Natural History Museum</a> in London holds the UK's largest collection.</p>
     <h2>About the photos</h2>
     <p>Photos come from the museums' own records. Some museums photograph paperwork, like old registers and labels, as well as specimens. The game tries to skip those by checking each photo's description, but some will still slip through. If you spot one, tap "Not a specimen?" and it'll be hidden on your phone.</p>
-    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, reptiles and amphibians it shows a living example first, labelled "Living example", as preserved ones can be upsetting to look at. Counts are always UK specimens only.</p>
+    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, birds, reptiles and amphibians it shows a living example first, labelled "Living example", as preserved ones and eggs can be upsetting or hard to make out. Where it can, it uses the species' main photo from Wikipedia. Counts are always UK specimens only.</p>
     <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species) · <a href="#pick">Photo picker</a> (choose the photo each species uses).</p>
     <p class="small muted">Counts are approximate and change as museums add records. Group colours are from Sanzo Wada's <i>A Dictionary of Color Combinations</i>; screen colours are approximate.</p>
     <div class="row"><a class="btn" href="#play">Play today's puzzle</a></div>
@@ -968,7 +1001,7 @@ async function checkView() {
   };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Report copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); } };
   // clear cached photos so the game picks up the new ones
-  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp3.${sci}`); } catch {} });
+  SPECIES.forEach(([, sci]) => { try { localStorage.removeItem(`uks.sp4.${sci}`); } catch {} });
 }
 
 /* ---------- photo picker (for choosing the photo each species uses) ---------- */
@@ -996,13 +1029,13 @@ async function pickView() {
     let opts = [], err = "";
     try {
       const key = await matchName(sp.sci, sp.rank || "species");
-      if (key) opts = await photoOptions(getJSON, key, sp.group); else err = "No name match";
+      if (key) opts = await photoOptions(getJSON, key, sp.group, sp.sci); else err = "No name match";
     } catch (e) { err = "Couldn't load options"; }
     if (route() !== "pick" || picker.group !== group) return;
     const row = $(`#pr-${sp.i}`); if (!row) return;
     const chosen = (local.get("uks.picks") || {})[sp.sci];
     const isOn = (p) => chosen && chosen.url === p.url;
-    const label = { uk: "UK specimen", world: "Specimen elsewhere", living: "Living" };
+    const label = { uk: "UK specimen", world: "Specimen elsewhere", living: "Living", wiki: "Wikipedia" };
     row.querySelector("p").outerHTML = `<div class="gallery">${opts.map((p, n) => `<button type="button" class="gitem pick" data-n="${n}" aria-pressed="${isOn(p)}">
         <img src="${esc(thumbUrl(p.url, 300))}" data-orig="${esc(p.url.replace(/^http:/, "https:"))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.orig){this.src=this.dataset.orig;this.dataset.orig=''}else{this.replaceWith(Object.assign(document.createElement('span'),{className:'gfail',textContent:'Didn\\'t load'}))}">
         <span>${label[p.kind]}${p.country && p.kind !== "uk" ? ` · ${esc(p.country)}` : ""}</span></button>`).join("")}
