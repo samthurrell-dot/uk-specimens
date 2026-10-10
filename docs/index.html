@@ -621,7 +621,7 @@ async function photoOptionsGbif(getJSON, key, group) {
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
 // Wikimedia images are already sized; IIIF image servers (e.g. RBGE) can be asked for a smaller size directly.
 const thumbUrl = (url, w = 600) =>
-  /upload\.wikimedia\.org/.test(url) ? url
+  /\.wikimedia\.org\//.test(url) ? url
   : /\/iiif\/.+\/full\/[^/]+\/0\/default\.jpg$/.test(url) ? url.replace(/\/full\/[^/]+\/0\//, `/full/${w},/0/`)
   : `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
 
@@ -691,11 +691,11 @@ window.photoFailed = (img) => {
 };
 function card(s, opts = {}) {
   const g = groupOf(s);
-  const p = s.photo, tag = p && (p.kind === "living" || p.kind === "wiki") ? "Living example" : p && p.kind === "world" ? "Specimen outside the UK" : "";
+  const p = s.photo, tag = p && p.kind === "wiki" ? "From Wikipedia" : p && p.kind === "living" ? "Living example" : p && p.kind === "world" ? "Specimen outside the UK" : "";
   const pic = p
     ? `<div class="pic">${tag ? `<span class="tag">${tag}</span>` : ""}<img src="${esc(thumbUrl(p.url))}" data-orig="${esc(p.url.replace(/^http:/, "https:"))}" alt="${p.kind === "living" || p.kind === "wiki" ? "Living" : "Museum specimen of"} ${esc(s.name)}" loading="lazy" referrerpolicy="no-referrer" onerror="photoFailed(this)"></div>`
     : `<div class="pic none" style="background:${g.hex}"></div>`;
-  const where = p ? (p.kind === "living" || p.kind === "wiki" ? "Not a museum specimen. Photo: " : p.kind === "world" ? `Specimen ${p.country ? `(${esc(p.country)}) ` : ""}from ` : "Photo: ") : "";
+  const where = p ? (p.kind === "wiki" ? "Not a UK specimen. Photo: " : p.kind === "living" ? "Not a museum specimen. Photo: " : p.kind === "world" ? `Specimen ${p.country ? `(${esc(p.country)}) ` : ""}from ` : "Photo: ") : "";
   const credit = p ? `<p class="credit">${where}${esc(p.credit)} · ${esc(p.licence)} · ${p.kind === "wiki" ? `<a href="${esc(p.source)}" target="_blank" rel="noopener">Wikimedia</a>` : `<a href="https://www.gbif.org/occurrence/${encodeURIComponent(p.occurrence)}" target="_blank" rel="noopener">record</a>`}${p.kind === "living" || p.kind === "wiki" ? "" : ` · <button class="tiny" type="button" data-report="${esc(s.sci)}">Not a specimen?</button>`}</p>` : "";
   const count = opts.hide
     ? `<p class="count hidden" aria-label="Unknown">?<small>specimens</small></p>`
@@ -958,7 +958,7 @@ function learnView() {
     <p>Most specimens are kept in stores rather than on display, but museums near Manchester show some of their collections, including <a href="https://www.museum.manchester.ac.uk/" target="_blank" rel="noopener">Manchester Museum</a> and <a href="https://www.liverpoolmuseums.org.uk/world-museum" target="_blank" rel="noopener">World Museum Liverpool</a>. The <a href="https://www.nhm.ac.uk/" target="_blank" rel="noopener">Natural History Museum</a> in London holds the UK's largest collection.</p>
     <h2>About the photos</h2>
     <p>Photos come from the museums' own records. Some museums photograph paperwork, like old registers and labels, as well as specimens. The game tries to skip those by checking each photo's description, but some will still slip through. If you spot one, tap "Not a specimen?" and it'll be hidden on your phone.</p>
-    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, birds, reptiles, amphibians, plants and fungi it shows a living example first, labelled "Living example", as preserved ones, eggs and pressed or dried specimens can be upsetting or hard to make out. Where it can, it uses the species' main photo from Wikipedia. Counts are always UK specimens only.</p>
+    <p>Where no UK museum has an open photo, the game uses a specimen from a museum elsewhere, labelled "Specimen outside the UK". For mammals, birds, reptiles, amphibians, plants and fungi it shows a living example first, as preserved ones, eggs and pressed or dried specimens can be upsetting or hard to make out. Where it can, it uses the species' main picture from Wikipedia, labelled "From Wikipedia" (usually a photo of a living example, sometimes a painting or a museum display). Counts are always UK specimens only.</p>
     <p class="small"><a href="#check">Run a photo check</a> (for testing: lists what was found for every species) · <a href="#pick">Photo picker</a> (choose the photo each species uses).</p>
     <p class="small muted">Counts are approximate and change as museums add records. Group colours are from Sanzo Wada's <i>A Dictionary of Color Combinations</i>; screen colours are approximate.</p>
     <div class="row"><a class="btn" href="#play">Play today's puzzle</a></div>
@@ -978,21 +978,23 @@ async function checkView() {
     try {
       const key = await matchName(sci, rank || "species");
       if (!key) line = { name, sci, result: "no name match" };
-      else { const r = await findPhoto(getJSON, key, group, sci); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url }; }
+      else { const r = await findPhoto(getJSON, key, group, sci); line = { name, sci, result: r.photo ? r.photo.kind : "none", log: r.log, url: r.photo && r.photo.url, photo: r.photo }; }
     } catch (e) { line = { name, sci, result: "error", detail: String(e && e.message || e) }; }
     done++; const l = $("#loading"); if (l) l.textContent = `Checked ${done} of ${SPECIES.length}…`;
     return line;
   });
   if (route() !== "check") return;
   const n = (k) => rows.filter((r) => r.result === k).length;
-  const fmtLog = (log = []) => log.map((t) => t.error ? `${t.kind}: error (${t.error})` : `${t.kind}: ${t.seen} seen, ${t.paperwork} paperwork, ${t.licence} licence, ${t.other} other${t.found ? " → used" : ""}`).join(" | ");
+  const fmtLog = (log = []) => log.map((t) => t.error ? `${t.kind}: error (${t.error})` : t.kind === "wiki" || t.kind === "picked" ? `${t.kind}: ${t.found ? "used" : "none"}` : `${t.kind}: ${t.seen} seen, ${t.paperwork} paperwork, ${t.licence} licence, ${t.other} other${t.found ? " → used" : ""}`).join(" | ");
   const text = [`Photo check ${new Date().toLocaleString("en-GB")}`,
-    `UK specimen ${n("uk")} · elsewhere ${n("world")} · living ${n("living")} · none ${n("none")} · no match ${n("no name match")} · errors ${n("error")}`, "",
+    `Wikipedia ${n("wiki")} · UK specimen ${n("uk")} · elsewhere ${n("world")} · living ${n("living")} · none ${n("none")} · no match ${n("no name match")} · errors ${n("error")}`, "",
     ...rows.map((r) => `${r.name} (${r.sci}): ${r.result}${r.detail ? " (" + r.detail + ")" : ""}${r.log ? " — " + fmtLog(r.log) : ""}${r.url ? " — " + r.url : ""}`)].join("\n");
   $("#loading").textContent = "Done.";
-  $("#out").innerHTML = `<p class="rank">UK specimen ${n("uk")} · Elsewhere ${n("world")} · Living ${n("living")} · None ${n("none")}${n("no name match") ? ` · No match ${n("no name match")}` : ""}${n("error") ? ` · Errors ${n("error")}` : ""}</p>
+  $("#out").innerHTML = `<p class="rank">Wikipedia ${n("wiki")} · UK specimen ${n("uk")} · Elsewhere ${n("world")} · Living ${n("living")} · None ${n("none")}${n("no name match") ? ` · No match ${n("no name match")}` : ""}${n("error") ? ` · Errors ${n("error")}` : ""}</p>
     <div class="row"><button class="btn" type="button" id="copy">Copy report</button></div>
     <p class="small muted">Paste the report into the chat with Claude.</p>
+    <div class="row"><button class="btn alt" type="button" id="lockin">Copy photos to lock in</button></div>
+    <p class="small muted">Copies every chosen photo with its credit and licence, so Claude can fix them in the game for everyone.</p>
     <h2 style="font-size:24px;margin-top:8px;">Check the photos by eye</h2>
     <p class="small">Tap any photo that isn't a specimen (paperwork, a label, a blank tray). Then copy the list and paste it to Claude, and those photos will be skipped for everyone.</p>
     <div class="gallery">${rows.filter((r) => r.url).map((r) => `<button type="button" class="gitem" data-url="${esc(r.url)}" data-name="${esc(r.name)}" aria-pressed="false">
@@ -1008,6 +1010,10 @@ async function checkView() {
     const bad = [...app.querySelectorAll('.gitem[aria-pressed="true"]')].map((b) => `${b.dataset.name}: ${b.dataset.url}`);
     if (!bad.length) return toast("Tap the bad photos first");
     try { await navigator.clipboard.writeText("Bad photos:\n" + bad.join("\n")); toast("List copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); }
+  };
+  $("#lockin").onclick = async () => {
+    const keep = Object.fromEntries(rows.filter((r) => r.photo).map((r) => [r.sci, r.photo]));
+    try { await navigator.clipboard.writeText("Lock in photos:\n" + JSON.stringify(keep)); toast(`Copied ${Object.keys(keep).length} photos`); } catch { toast("Couldn't copy, sorry"); }
   };
   $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(text); toast("Report copied"); } catch { toast("Couldn't copy. Try a screenshot instead."); } };
   // clear cached photos so the game picks up the new ones

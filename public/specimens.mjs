@@ -448,6 +448,6 @@ async function photoOptionsGbif(getJSON, key, group) {
 // GBIF's free image resizing service. If it fails, the page falls back to the original image.
 // Wikimedia images are already sized; IIIF image servers (e.g. RBGE) can be asked for a smaller size directly.
 export const thumbUrl = (url, w = 600) =>
-  /upload\.wikimedia\.org/.test(url) ? url
+  /\.wikimedia\.org\//.test(url) ? url
   : /\/iiif\/.+\/full\/[^/]+\/0\/default\.jpg$/.test(url) ? url.replace(/\/full\/[^/]+\/0\//, `/full/${w},/0/`)
   : `https://api.gbif.org/v1/image/unsafe/fit-in/${w}x/${encodeURIComponent(url)}`;
