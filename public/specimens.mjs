@@ -240,6 +240,9 @@ export function licenceOf(l = "") {
 
 // Photos checked by eye and found not to be specimens (from the gallery on the photo check page).
 // Add the image addresses here and they'll be skipped for everyone.
+// Image servers that don't load on phones (seen 10 Oct 2026: every RBGE herbarium image failed).
+export const BLOCKED_HOSTS = /\/\/iiif\.rbge\.org\.uk\//;
+
 export const BAD_PHOTOS = new Set([
   // checked 4 Oct 2026: paperwork, or upsetting photos of dead animals
   "https://data.nhm.ac.uk/media/3d5c767b-2b93-41dc-88bf-86fbac5bd50d",
@@ -325,6 +328,12 @@ export const BAD_PHOTOS = new Set([
   "https://inaturalist-open-data.s3.amazonaws.com/photos/661931788/original.jpg",
   "https://data.nhm.ac.uk/media/07dcfb60-baf8-4b15-a736-cd7f572759c9",
   "https://data.nhm.ac.uk/media/38841039-bd6a-4276-9d3f-762185d18edc",
+  // checked 10 Oct 2026 (third review)
+  "https://d2jcv3kl45hlgi.cloudfront.net/a1731278a9799006576f6daa03857332.jpg",
+  "https://d2jcv3kl45hlgi.cloudfront.net/10d9ec4c1a6d305198060cc0f9d293d6.jpg",
+  "https://data.nhm.ac.uk/media/8ec1f339-e65d-4c51-bc76-9b14aa4de9a7",
+  "https://data.nhm.ac.uk/media/7061f121-6652-4cf4-b5b4-e3a11d15cf25",
+  "https://data.nhm.ac.uk/media/2b8634ed-6316-4e3e-9e02-af0ea454d371",
 ]);
 
 // Photos chosen by hand in the photo picker (#pick). The game uses these first and doesn't search at all.
@@ -338,6 +347,7 @@ const usable = (o, m) => {
   if (!/^https?:\/\//.test(url) || (m.format && !/^image\//i.test(m.format))) return { why: "other" };
   if (!lic) return { why: "licence" };
   if (BAD_PHOTOS.has(url)) return { why: "paperwork" };
+  if (BLOCKED_HOSTS.test(url)) return { why: "other" };
   if (PAPERWORK.test([m.title, m.description, m.caption, url.split("/").pop()].filter(Boolean).join(" ").replace(/[_.-]+/g, " "))) return { why: "paperwork" };
   const who = m.rightsHolder || m.creator || o.institutionCode || o.datasetName || o.publisher || "the publisher";
   return { photo: { url, credit: String(who).slice(0, 80), licence: lic, occurrence: o.key, country: o.country || "" } };
@@ -367,7 +377,7 @@ const TIER = {
   world: { kind: "world", label: "Specimen elsewhere", query: SPECIMEN_TYPES, limit: 50 },
   living: { kind: "living", label: "Living example", query: "basisOfRecord=HUMAN_OBSERVATION", limit: 20 },
 };
-export const LIVING_FIRST = ["mammal", "herp", "bird"];
+export const LIVING_FIRST = ["mammal", "herp", "bird", "plant", "fungus"];
 export const tiersFor = (group) =>
   group === "fossil" ? [TIER.uk, TIER.world] : LIVING_FIRST.includes(group) ? [TIER.living, TIER.uk, TIER.world] : [TIER.uk, TIER.world, TIER.living];
 export const PHOTO_TIERS = [TIER.uk, TIER.world, TIER.living];
