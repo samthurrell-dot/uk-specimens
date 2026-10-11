@@ -467,7 +467,7 @@ async function exploreView() {
 // Category filters for "Found near you": each maps to GBIF groups, looked up by name once and cached.
 const NEAR_GROUPS = {
   bird: ["Aves"], mammal: ["Mammalia"], insect: ["Insecta"], plant: ["Plantae"], fungus: ["Fungi"],
-  sea: ["Actinopterygii", "Elasmobranchii", "Mollusca", "Echinodermata", "Cnidaria"], herp: ["Reptilia", "Amphibia"],
+  sea: ["Actinopterygii", "Elasmobranchii", "Mollusca", "Echinodermata", "Cnidaria", "Malacostraca"], herp: ["Reptilia", "Amphibia"],
 };
 async function groupKeys(g) {
   const ck = `uks.gk.${g}`, c = local.get(ck); if (c) return c;
