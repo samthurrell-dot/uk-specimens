@@ -18,6 +18,42 @@ function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = fal
 /* ---------- GBIF ---------- */
 const getJSON = (url) => fetchJSON(url);
 const matchName = (name, rank) => matchTaxon(getJSON, name, rank);
+// The same species in the DiSSCo UK catalogue (its search page takes a GBIF taxon key)
+const catLink = (s) => (s && s.key ? `https://dissco-uk.org/specimen/search?taxonKey=${encodeURIComponent(s.key)}` : (s && s.link) || "https://dissco-uk.org/specimen/search");
+
+// One real record from the catalogue for a species: where and when it was collected, and which museum holds it.
+const INST_NAMES = { NHMUK: "the Natural History Museum, London", BMNH: "the Natural History Museum, London", K: "the Royal Botanic Gardens, Kew",
+  E: "the Royal Botanic Garden Edinburgh", MANCH: "Manchester Museum", NMW: "Amgueddfa Cymru – Museum Wales", OUMNH: "Oxford University Museum of Natural History",
+  NMS: "National Museums Scotland", LIV: "World Museum Liverpool", BGS: "the British Geological Survey", CAMZM: "the Museum of Zoology, Cambridge" };
+async function exampleRecord(sp) {
+  if (!sp || !sp.key) return null;
+  const ck = `uks.ex.${puzzle}.${sp.key}`, cached = local.get(ck);
+  if (cached !== null && cached !== undefined) return cached || null;
+  try {
+    const offset = Math.floor(mkRng(puzzle * 31 + sp.key)() * Math.max(0, Math.min(sp.count || 0, 300) - 20));
+    const r = await getJSON(`${API}/occurrence/search?limit=20&offset=${offset}&taxonKey=${sp.key}&${FILTER}`);
+    const o = (r.results || []).find((x) => x.year && (x.locality || x.county || x.stateProvince || x.country)) || null;
+    let rec = null;
+    if (o) {
+      let museum = INST_NAMES[o.institutionCode] || "";
+      if (!museum && o.institutionKey) { try { museum = (await getJSON(`${API}/grscicoll/institution/${o.institutionKey}`)).name || ""; } catch {} }
+      const place = [o.locality, o.county || o.stateProvince, o.country === "United Kingdom of Great Britain and Northern Ireland" ? "UK" : o.country].filter(Boolean)
+        .map((x) => String(x).replace(/\s+/g, " ").trim()).filter((x, k, a) => x && a.indexOf(x) === k).join(", ").slice(0, 90);
+      rec = { year: o.year, place, museum: museum || o.institutionCode || "a UK collection", key: o.key };
+    }
+    local.set(ck, rec || 0);
+    return rec;
+  } catch { return null; }
+}
+async function fillExample(el, sp) {
+  const r = await exampleRecord(sp);
+  if (!el.isConnected) return;
+  el.innerHTML = r
+    ? `<b>From the catalogue</b><span>One of the ${fmt(sp.count)} ${esc(sp.name.toLowerCase())} specimens was collected ${r.place ? `in ${esc(r.place)} ` : ""}in ${esc(r.year)}, and is held by ${esc(r.museum)}. <a href="https://www.gbif.org/occurrence/${encodeURIComponent(r.key)}" target="_blank" rel="noopener">See the record</a></span>
+       <a href="${esc(catLink(sp))}" target="_blank" rel="noopener">Browse all ${fmt(sp.count)} in the DiSSCo UK catalogue</a>`
+    : `<a href="${esc(catLink(sp))}" target="_blank" rel="noopener">Browse all ${fmt(sp.count)} in the DiSSCo UK catalogue</a>`;
+}
+
 const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=${key}&publishing_country=GB&basis_of_record=PRESERVED_SPECIMEN&basis_of_record=FOSSIL_SPECIMEN&basis_of_record=MATERIAL_SAMPLE`;
 
 // Look up one species. Results are kept on the device for a week.
@@ -101,6 +137,7 @@ function errorBox(kind, retry) {
 function pairView({ label, pips, a, b, pending, nextLabel }) {
   const bottom = pending
     ? `<div class="verdict ${pending.right ? "good" : "bad"}"><b>${pending.right ? "Right" : "Not this time"}</b><p>${esc(verdictText(a, b))}</p></div>
+       <div class="fromcat" id="fromcat"><span class="muted small">Opening the catalogue…</span></div>
        <button class="btn" type="button" id="next">${nextLabel}</button>`
     : `<div class="guess"><button class="btn" type="button" data-g="more">More</button><button class="btn" type="button" data-g="fewer">Fewer</button></div>`;
   app.innerHTML = `<section class="stack">
@@ -110,6 +147,8 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
     ${card(hideBad(b), { fact: !!pending, hide: !pending })}
     ${bottom}</section>`;
   wireReports(app);
+  const fc = $("#fromcat"); if (fc) fillExample(fc, b);
+  if (pending && pending.right && !pending.partied) { pending.partied = true; discoBurst(); }
 }
 
 /* ---------- daily game ---------- */
@@ -154,6 +193,7 @@ function start() {
     <h1>More or <em>less?</em></h1>
     <div class="strip" aria-hidden="true">${Object.values(GROUPS).map((g) => `<span style="background:${g.hex}"></span>`).join("")}</div>
     <p>UK museums hold millions of preserved specimens, from pressed daisies to dinosaur bones. Some species fill whole drawers. Others are almost never collected.</p>
+    <p class="small">Every number is a real count from the <a href="https://dissco-uk.org/specimen/search" target="_blank" rel="noopener">DiSSCo UK catalogue</a>, the national list of specimens held in UK museums, universities and herbaria. After each guess you'll see one real record from it.</p>
     <ul class="rules">
       <li>You see a species and how many UK specimens there are.</li>
       <li>Guess if the next one has <b>more</b> or <b>fewer</b>.</li>
@@ -208,10 +248,10 @@ function results() {
     <div class="row"><button class="btn" type="button" id="share">Share result</button><a class="btn alt" href="#practice">Keep practising</a></div>
     <div class="chain"><h3 style="font-size:20px;margin-bottom:6px;">Today's specimens</h3><ol>
       ${day.chain.map((s, k) => `<li><i style="background:${groupOf(s).hex}"></i>
-        <span><a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.name)}</a><small>${esc(s.sci)}</small></span>
+        <span><a href="${esc(catLink(s))}" target="_blank" rel="noopener">${esc(s.name)}</a><small>${esc(s.sci)}</small></span>
         <span><span class="n">${fmt(s.count)}</span>${k > 0 ? `<span class="m" style="color:var(${marks[k - 1] ? "--good" : "--bad"})">${marks[k - 1] ? "Right" : "Wrong"}</span>` : ""}</span></li>`).join("")}
     </ol></div>
-    <p class="small muted">Names link to the records on GBIF, where you can see where and when each specimen was collected.</p>
+    <p class="small muted">Names link to the DiSSCo UK catalogue, where you can see where and when each specimen was collected.</p>
     <p class="small muted">Scores are kept on this phone only. Share your result to compare with friends.</p></section>`;
   $("#share").onclick = async () => {
     const text = `More or less? No. ${puzzle}\n${gridText(marks)} ${score}/${ROUNDS}${location.protocol.startsWith("http") ? "\n" + location.href.split("#")[0] : ""}`;
@@ -298,7 +338,7 @@ async function exploreView() {
     <p class="small muted">${rows.length} species · ${fmt(total)} specimens in total. The bars use a stretched scale so small numbers still show: each step of the same length means about ten times as many.</p>
     <ol class="bars">${rows.map((s, k) => `<li>
       <span class="rk">${k + 1}</span>
-      <span class="nm">${s.link ? `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}<small>${esc(s.sci)}</small>
+      <span class="nm">${s.key ? `<a href="${esc(catLink(s))}" target="_blank" rel="noopener">${esc(s.name)}</a>` : esc(s.name)}<small>${esc(s.sci)}</small>
         <span class="bar" aria-hidden="true"><i style="width:${bar(s.count).toFixed(1)}%;background:${groupOf(s).hex}"></i></span></span>
       <span class="ct">${s.count ? fmt(s.count) : "none"}</span></li>`).join("")}</ol>
     <p class="small muted">"None" means no UK specimen records were found online for that name. The specimens may exist but not be online yet.</p>
@@ -337,6 +377,36 @@ function learnView() {
     <div class="row"><a class="btn" href="#play">Play today's puzzle</a></div>
   </section>`;
 }
+
+/* ---------- DiSSCo mode ---------- */
+const discoOn = () => document.documentElement.classList.contains("disco");
+function setDisco(on) {
+  document.documentElement.classList.toggle("disco", on);
+  local.set("uks.disco", on);
+  const b = $("#discoBtn"); if (b) { b.setAttribute("aria-pressed", String(on)); b.querySelector("span").textContent = on ? "Lights up" : "DiSSCo mode"; }
+  let ball = $("#mirrorball");
+  if (on && !ball) {
+    ball = document.createElement("div"); ball.id = "mirrorball"; ball.setAttribute("aria-hidden", "true");
+    ball.innerHTML = `<i class="string"></i><i class="ball"></i>` + Array.from({ length: 6 }, (_, k) => `<i class="beam b${k}"></i>`).join("");
+    document.body.prepend(ball);
+    const floor = document.createElement("div"); floor.id = "dancefloor"; floor.setAttribute("aria-hidden", "true");
+    floor.innerHTML = Array.from({ length: 48 }, (_, k) => `<i style="animation-delay:${(-(k * 7) % 12) * 0.25}s"></i>`).join("");
+    document.body.append(floor);
+    toast("Let's dance");
+  }
+  if (!on) { $("#mirrorball")?.remove(); $("#dancefloor")?.remove(); }
+}
+function discoBurst() {
+  if (!discoOn() || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const cols = Object.values(GROUPS).map((g) => g.hex).concat(["#f9c1ce", "#fff200", "#00b49b", "#cc1236"]);
+  for (let k = 0; k < 40; k++) {
+    const c = document.createElement("i"); c.className = "confetti";
+    c.style.cssText = `left:${50 + (Math.random() - 0.5) * 30}vw;background:${cols[k % cols.length]};--dx:${(Math.random() - 0.5) * 120}vw;--dy:${-30 - Math.random() * 60}vh;--r:${Math.random() * 720}deg;animation-delay:${Math.random() * 0.15}s`;
+    document.body.append(c); setTimeout(() => c.remove(), 1800);
+  }
+}
+$("#discoBtn").onclick = () => setDisco(!discoOn());
+if (local.get("uks.disco")) setDisco(true);
 
 /* ---------- tabs ---------- */
 /* ---------- photo check (for testing) ---------- */
