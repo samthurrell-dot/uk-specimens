@@ -88,6 +88,42 @@ async function nearestOf(sp, at) {
   }
   local.set(ck, { none: true }); return null;
 }
+// UK institutions with collections (GRSciColl), with map locations. Kept on the phone for a week.
+async function institutions() {
+  const c = local.get("uks.inst");
+  if (c && Date.now() - c.t < WEEK) return c.list;
+  const list = [];
+  for (let offset = 0; offset < 3000; offset += 500) {
+    const r = await getJSON(`${API}/grscicoll/institution?country=GB&active=true&limit=500&offset=${offset}`);
+    for (const i of r.results || []) {
+      const lat = i.latitude ?? (i.address || {}).latitude, lng = i.longitude ?? (i.address || {}).longitude;
+      if (typeof lat === "number" && typeof lng === "number")
+        list.push({ key: i.key, name: i.name, city: (i.address || {}).city || (i.mailingAddress || {}).city || "", lat, lng });
+    }
+    if (r.endOfRecords || !(r.results || []).length) break;
+  }
+  local.set("uks.inst", { t: Date.now(), list });
+  return list;
+}
+const instLink = (key) => `https://www.gbif.org/grscicoll/institution/${encodeURIComponent(key)}`;
+// The collections holding a species, nearest first: [{name, city, d, n, key}]
+async function holdersOf(sp, at) {
+  const r = await getJSON(`${API}/occurrence/search?limit=0&taxonKey=${sp.key}&${FILTER}&facet=institutionKey&facetLimit=200`);
+  const counts = new Map((((r.facets || [])[0] || {}).counts || []).map((f) => [f.name, f.count]));
+  const all = await institutions();
+  return all.filter((i) => counts.has(i.key)).map((i) => ({ ...i, n: counts.get(i.key), d: haversineKm(at, i) })).sort((a, b) => a.d - b.d);
+}
+async function holderBox(el, sp) {
+  el.innerHTML = `<span class="muted small">Checking which collections hold one…</span>`;
+  try {
+    const h = await holdersOf(sp, here), from = here.label === "your location" ? "you" : esc(here.label);
+    el.innerHTML = h.length
+      ? `<span>The closest collection holding a ${esc(sp.name.toLowerCase())} specimen is <a href="${instLink(h[0].key)}" target="_blank" rel="noopener">${esc(h[0].name)}</a>${h[0].city ? ` in ${esc(h[0].city)}` : ""}, <b class="dist">${kmText(h[0].d)}</b> from ${from}. It holds ${fmt(h[0].n)} of them.${h[1] ? ` Next nearest: ${esc(h[1].name)} (${kmText(h[1].d)}).` : ""}</span>
+         <span class="small muted">Most specimens are kept in stores rather than on show, so check with the museum before you visit.</span>`
+      : `<span>None of the collections holding a ${esc(sp.name.toLowerCase())} specimen have a map location listed.</span>`;
+  } catch { el.innerHTML = `<span class="muted small">Couldn't check just now. Try again in a moment.</span>`; }
+}
+
 async function nearestBox(el, sp) {
   el.innerHTML = `<span class="muted small">Searching outwards from you…</span>`;
   try {
@@ -121,9 +157,13 @@ async function fillExample(el, sp) {
     ? `<b>From the catalogue</b><span>One of the ${fmt(sp.count)} ${esc(sp.name.toLowerCase())} specimens was collected ${r.place ? `in ${esc(r.place)} ` : ""}in ${esc(r.year)}, and is held by ${esc(r.museum)}. <a href="https://www.gbif.org/occurrence/${encodeURIComponent(r.key)}" target="_blank" rel="noopener">See the record</a></span>
        <a href="${esc(catLink(sp))}" target="_blank" rel="noopener">Browse all ${fmt(sp.count)} in the DiSSCo UK catalogue</a>`
     : `<a href="${esc(catLink(sp))}" target="_blank" rel="noopener">Browse all ${fmt(sp.count)} in the DiSSCo UK catalogue</a>`;
-  el.insertAdjacentHTML("beforeend", `<div class="near"><button class="btn alt small-btn" type="button">📍 Find the nearest one to me</button></div>`);
-  const box = el.querySelector(".near");
-  box.querySelector("button").onclick = async () => { await askWhere(box); nearestBox(box, sp); };
+  el.insertAdjacentHTML("beforeend", `<div class="near"><div class="row"><button class="btn alt small-btn" type="button" data-n="found">📍 Found nearest to me</button><button class="btn alt small-btn" type="button" data-n="held">🏛 Held nearest to me</button></div><div class="nearout"></div></div>`);
+  const box = el.querySelector(".near"), out = box.querySelector(".nearout");
+  box.querySelectorAll("[data-n]").forEach((b) => (b.onclick = async () => {
+    await askWhere(out);
+    const div = document.createElement("div"); div.className = "nearitem"; out.innerHTML = ""; out.append(div);
+    (b.dataset.n === "found" ? nearestBox : holderBox)(div, sp);
+  }));
 }
 
 const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=${key}&publishing_country=GB&basis_of_record=PRESERVED_SPECIMEN&basis_of_record=FOSSIL_SPECIMEN&basis_of_record=MATERIAL_SAMPLE`;
@@ -449,14 +489,21 @@ async function nearPanel(el) {
       const facets = ((sum.facets || [])[0] || {}).counts || [];
       await pool(facets.filter((f) => !nameOf[f.name]), 3, async (f) => { try { const t = await getJSON(`${API}/species/${f.name}`); nameOf[f.name] = t.vernacularName || t.canonicalName; } catch {} });
       for (const o of closest) o.museum = await museumOf(o);
-      nearCache[k] = { total: sum.count || 0, top: facets.map((f) => ({ key: f.name, n: f.count, name: nameOf[f.name] || "Unknown species" })), closest };
+      let colls = [];
+      try {
+        colls = (await institutions()).map((i) => ({ ...i, d: haversineKm(here, i) })).sort((a, b) => a.d - b.d).slice(0, 12);
+        await pool(colls, 3, async (c) => { try { c.n = (await getJSON(`${API}/occurrence/search?limit=0&institutionKey=${c.key}&${FILTER}`)).count; } catch { c.n = 0; } });
+        colls = colls.filter((c) => c.n > 0).slice(0, 6);
+      } catch {}
+      nearCache[k] = { total: sum.count || 0, top: facets.map((f) => ({ key: f.name, n: f.count, name: nameOf[f.name] || "Unknown species" })), closest, colls };
     } catch { el.innerHTML = `${head}<p class="err">Couldn't search near you just now.</p>`; return; }
   }
   const d = nearCache[k], where = here.label === "your location" ? "you" : esc(here.label);
   el.innerHTML = `${head}
     <p class="rank"><b>${fmt(d.total)}</b> specimens in UK collections were collected within 10 km of ${where}.</p>
     ${d.top.length ? `<h3 style="font-size:18px;">Most collected nearby</h3><ol class="bars">${d.top.map((t, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://dissco-uk.org/specimen/search?taxonKey=${encodeURIComponent(t.key)}" target="_blank" rel="noopener">${esc(t.name)}</a></span><span class="ct">${fmt(t.n)}</span></li>`).join("")}</ol>` : ""}
-    ${d.closest.length ? `<h3 style="font-size:18px;">Collected closest to ${where}</h3><ol class="bars">${d.closest.map((o, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://www.gbif.org/occurrence/${encodeURIComponent(o.key)}" target="_blank" rel="noopener">${esc(o.vernacularName || o.species || o.scientificName || "Unnamed specimen")}</a><small>${esc([placeOf(o), o.year, o.museum].filter(Boolean).join(" · "))}</small></span><span class="ct">${o.d < 1 ? "<1" : o.d.toFixed(1)} km</span></li>`).join("")}</ol>` : `<p class="muted">No specimens with map locations were found within 10 km.</p>`}
+    ${d.closest.length ? `<h3 style="font-size:18px;">Found closest to ${where}</h3><ol class="bars">${d.closest.map((o, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://www.gbif.org/occurrence/${encodeURIComponent(o.key)}" target="_blank" rel="noopener">${esc(o.vernacularName || o.species || o.scientificName || "Unnamed specimen")}</a><small>${esc([placeOf(o), o.year, o.museum].filter(Boolean).join(" · "))}</small></span><span class="ct">${o.d < 1 ? "<1" : o.d.toFixed(1)} km</span></li>`).join("")}</ol>` : `<p class="muted">No specimens with map locations were found within 10 km.</p>`}
+    ${d.colls && d.colls.length ? `<h3 style="font-size:18px;">Collections near ${where}</h3><p class="small muted">Where specimens are held. Most are in stores, so check before visiting.</p><ol class="bars">${d.colls.map((c, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="${instLink(c.key)}" target="_blank" rel="noopener">${esc(c.name)}</a><small>${esc(c.city)}${c.city ? " · " : ""}${fmt(c.n)} specimens online</small></span><span class="ct">${c.d < 1 ? "<1" : c.d < 10 ? c.d.toFixed(1) : fmt(Math.round(c.d))} km</span></li>`).join("")}</ol>` : ""}
     <p class="small muted">Map locations on old specimens are often approximate, sometimes just the middle of a town or county. <button class="tiny" type="button" id="forget">Change or forget my location</button></p>`;
   $("#forget").onclick = () => { forgetWhere(); nearPanel(el); };
 }

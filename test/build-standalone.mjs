@@ -47,7 +47,9 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .where .pc{display:flex;gap:8px;}
 .where input{flex:1;min-width:0;height:48px;border:1px solid var(--line-strong);border-radius:2px;background:var(--raised);color:var(--ink);font-size:17px;padding:0 12px;}
 .near{margin-top:4px;display:flex;flex-direction:column;gap:6px;}
-.small-btn{min-height:44px;font-size:15px;}
+.small-btn{min-height:44px;font-size:15px;padding:0 12px;}
+.near .row > .btn{flex:1 1 140px;}
+.nearitem{display:flex;flex-direction:column;gap:6px;margin-top:4px;}
 .dist{font-family:var(--mono);}
 .nearme{display:flex;flex-direction:column;gap:10px;padding-bottom:6px;border-bottom:1px solid var(--line);}
 .discobtn{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border:1px solid var(--line-strong);border-radius:2px;background:var(--raised);color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;}
