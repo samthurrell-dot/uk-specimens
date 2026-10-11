@@ -464,48 +464,148 @@ async function exploreView() {
 }
 
 /* ---------- near you (in Explore) ---------- */
+// Category filters for "Found near you": each maps to GBIF groups, looked up by name once and cached.
+const NEAR_GROUPS = {
+  bird: ["Aves"], mammal: ["Mammalia"], insect: ["Insecta"], plant: ["Plantae"], fungus: ["Fungi"],
+  sea: ["Actinopterygii", "Elasmobranchii", "Mollusca", "Echinodermata", "Cnidaria"], herp: ["Reptilia", "Amphibia"],
+};
+async function groupKeys(g) {
+  const ck = `uks.gk.${g}`, c = local.get(ck); if (c) return c;
+  const keys = [];
+  for (const name of NEAR_GROUPS[g] || []) {
+    try { const m = await getJSON(`${API}/species/match?name=${encodeURIComponent(name)}&strict=true`); if (m.usageKey && String(m.canonicalName).toLowerCase() === name.toLowerCase()) keys.push(m.usageKey); } catch {}
+  }
+  if (keys.length) local.set(ck, keys);
+  return keys;
+}
+// English common name for a GBIF taxon (from the game's own list first), cached on the phone
+const gameNames = Object.fromEntries(SPECIES.map(([name, sci]) => [sci.toLowerCase(), name]));
+async function commonName(key, sci) {
+  if (sci && gameNames[sci.toLowerCase()]) return gameNames[sci.toLowerCase()];
+  if (!key) return "";
+  const ck = `uks.vn.${key}`, c = local.get(ck); if (c !== null && c !== undefined) return c;
+  let name = "";
+  try {
+    const r = await getJSON(`${API}/species/${key}/vernacularNames?limit=100`);
+    const eng = (r.results || []).filter((v) => v.language === "eng" && v.vernacularName);
+    const pick = eng.find((v) => /united kingdom|britain|england|uk/i.test(v.country || v.area || v.source || "")) || eng[0];
+    name = pick ? pick.vernacularName.replace(/^\w/, (c) => c.toUpperCase()) : "";
+  } catch {}
+  local.set(ck, name);
+  return name;
+}
+const photoOf = (o) => { const m = (o.media || []).find((x) => x.type === "StillImage" && x.identifier); return m ? m.identifier : null; };
+
+const found = { group: "all", taxon: null, radius: 10, photos: false, show: 20 };
 const nearCache = {};
 async function nearPanel(el) {
   if (!el) return;
   const head = `<h2 style="font-size:24px;">Near you</h2>`;
   if (!here) {
-    el.innerHTML = `${head}<p>What has been collected near you, and which specimens came from closest to home?</p><div id="nearask"></div>`;
+    el.innerHTML = `${head}<p>What has been found near you, and where can you see specimens close to home?</p><div id="nearask"></div>`;
     await askWhere($("#nearask"));
     return nearPanel(el);
   }
-  const k = `${here.lat},${here.lng}`;
-  if (!nearCache[k]) {
-    el.innerHTML = `${head}<p class="muted">Looking around ${here.label === "your location" ? "you" : esc(here.label)}…</p>`;
-    try {
-      const geo = `&hasCoordinate=true&hasGeospatialIssue=false&geoDistance=${here.lat},${here.lng},10km`;
-      const [sum, recs] = await Promise.all([
-        getJSON(`${API}/occurrence/search?limit=0&${FILTER}${geo}&facet=speciesKey&facetLimit=8`),
-        getJSON(`${API}/occurrence/search?limit=300&${FILTER}${geo}`),
-      ]);
-      const pts = (recs.results || []).filter((o) => typeof o.decimalLatitude === "number");
-      pts.forEach((o) => (o.d = haversineKm(here, { lat: o.decimalLatitude, lng: o.decimalLongitude })));
-      const closest = pts.sort((a, b) => a.d - b.d).slice(0, 8);
-      const nameOf = {}; pts.forEach((o) => { if (o.speciesKey && !nameOf[o.speciesKey]) nameOf[o.speciesKey] = o.vernacularName || o.species; });
-      const facets = ((sum.facets || [])[0] || {}).counts || [];
-      await pool(facets.filter((f) => !nameOf[f.name]), 3, async (f) => { try { const t = await getJSON(`${API}/species/${f.name}`); nameOf[f.name] = t.vernacularName || t.canonicalName; } catch {} });
-      for (const o of closest) o.museum = await museumOf(o);
-      let colls = [];
-      try {
-        colls = (await institutions()).map((i) => ({ ...i, d: haversineKm(here, i) })).sort((a, b) => a.d - b.d).slice(0, 12);
-        await pool(colls, 3, async (c) => { try { c.n = (await getJSON(`${API}/occurrence/search?limit=0&institutionKey=${c.key}&${FILTER}`)).count; } catch { c.n = 0; } });
-        colls = colls.filter((c) => c.n > 0).slice(0, 6);
-      } catch {}
-      nearCache[k] = { total: sum.count || 0, top: facets.map((f) => ({ key: f.name, n: f.count, name: nameOf[f.name] || "Unknown species" })), closest, colls };
-    } catch { el.innerHTML = `${head}<p class="err">Couldn't search near you just now.</p>`; return; }
-  }
-  const d = nearCache[k], where = here.label === "your location" ? "you" : esc(here.label);
+  const where = here.label === "your location" ? "you" : esc(here.label);
   el.innerHTML = `${head}
-    <p class="rank"><b>${fmt(d.total)}</b> specimens in UK collections were collected within 10 km of ${where}.</p>
-    ${d.top.length ? `<h3 style="font-size:18px;">Most collected nearby</h3><ol class="bars">${d.top.map((t, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://dissco-uk.org/specimen/search?taxonKey=${encodeURIComponent(t.key)}" target="_blank" rel="noopener">${esc(t.name)}</a></span><span class="ct">${fmt(t.n)}</span></li>`).join("")}</ol>` : ""}
-    ${d.closest.length ? `<h3 style="font-size:18px;">Found closest to ${where}</h3><ol class="bars">${d.closest.map((o, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://www.gbif.org/occurrence/${encodeURIComponent(o.key)}" target="_blank" rel="noopener">${esc(o.vernacularName || o.species || o.scientificName || "Unnamed specimen")}</a><small>${esc([placeOf(o), o.year, o.museum].filter(Boolean).join(" · "))}</small></span><span class="ct">${o.d < 1 ? "<1" : o.d.toFixed(1)} km</span></li>`).join("")}</ol>` : `<p class="muted">No specimens with map locations were found within 10 km.</p>`}
-    ${d.colls && d.colls.length ? `<h3 style="font-size:18px;">Collections near ${where}</h3><p class="small muted">Where specimens are held. Most are in stores, so check before visiting.</p><ol class="bars">${d.colls.map((c, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="${instLink(c.key)}" target="_blank" rel="noopener">${esc(c.name)}</a><small>${esc(c.city)}${c.city ? " · " : ""}${fmt(c.n)} specimens online</small></span><span class="ct">${c.d < 1 ? "<1" : c.d < 10 ? c.d.toFixed(1) : fmt(Math.round(c.d))} km</span></li>`).join("")}</ol>` : ""}
+    <h3 style="font-size:20px;">Found near ${where}</h3>
+    <div class="chips" role="group" aria-label="Category">${CHIPS.map(([k, l]) =>
+      `<button class="chip" type="button" data-fg="${k}" aria-pressed="${!found.taxon && found.group === k}">${k !== "all" ? `<i style="background:${GROUPS[k].hex}"></i>` : ""}${esc(l)}</button>`).join("")}</div>
+    <form class="pc" id="fsearch" role="search"><input name="q" placeholder="Search a species, e.g. robin" autocomplete="off" aria-label="Search a species" value="${found.taxon ? esc(found.taxon.label) : ""}"><button class="btn alt" type="submit">Search</button></form>
+    <div id="fsugg" class="sugg"></div>
+    <div class="frow">
+      <label class="small">Within <select id="frad">${[5, 10, 25, 50].map((k) => `<option value="${k}"${found.radius === k ? " selected" : ""}>${k} km</option>`).join("")}</select></label>
+      <label class="small"><input type="checkbox" id="fphotos"${found.photos ? " checked" : ""}> Only with photos</label>
+      ${found.taxon ? `<button class="tiny" type="button" id="fclear">Clear species</button>` : ""}
+    </div>
+    <div id="fresults"><p class="muted">Looking around ${where}…</p></div>
+    <div id="fcolls"></div>
     <p class="small muted">Map locations on old specimens are often approximate, sometimes just the middle of a town or county. <button class="tiny" type="button" id="forget">Change or forget my location</button></p>`;
+  el.querySelectorAll("[data-fg]").forEach((b) => (b.onclick = () => { found.group = b.dataset.fg; found.taxon = null; found.show = 20; nearPanel(el); }));
+  $("#frad").onchange = (e) => { found.radius = Number(e.target.value); found.show = 20; nearPanel(el); };
+  $("#fphotos").onchange = (e) => { found.photos = e.target.checked; found.show = 20; nearPanel(el); };
+  if ($("#fclear")) $("#fclear").onclick = () => { found.taxon = null; found.show = 20; nearPanel(el); };
   $("#forget").onclick = () => { forgetWhere(); nearPanel(el); };
+  $("#fsearch").onsubmit = async (e) => {
+    e.preventDefault();
+    const q = String(new FormData(e.target).get("q") || "").trim(); const box = $("#fsugg");
+    if (q.length < 2) return toast("Type at least 2 letters");
+    box.innerHTML = `<p class="small muted">Searching names…</p>`;
+    try {
+      const mine = SPECIES.filter(([n, sci]) => (n + " " + sci).toLowerCase().includes(q.toLowerCase())).slice(0, 4).map(([n, sci]) => ({ sci, label: n }));
+      const r = await getJSON(`${API}/species/search?q=${encodeURIComponent(q)}&datasetKey=${BACKBONE}&status=ACCEPTED&limit=8`);
+      const hits = (r.results || []).filter((t) => t.key && t.canonicalName).map((t) => ({
+        key: t.nubKey || t.key, sci: t.canonicalName, rank: (t.rank || "").toLowerCase(),
+        label: ((t.vernacularNames || []).find((v) => v.language === "eng") || {}).vernacularName || "" }));
+      for (const l of mine) { const m = hits.find((h) => h.sci.toLowerCase() === l.sci.toLowerCase()); if (m) m.label = l.label; }
+      const opts = hits.slice(0, 8);
+      box.innerHTML = opts.length ? opts.map((o, n) => `<button class="chip" type="button" data-s="${n}">${esc(o.label ? `${o.label} · ` : "")}<i class="sci">${esc(o.sci)}</i>${o.rank && o.rank !== "species" ? ` <small>(${esc(o.rank)})</small>` : ""}</button>`).join("") : `<p class="small muted">No names found for "${esc(q)}".</p>`;
+      box.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => { const o = opts[Number(b.dataset.s)]; found.taxon = { key: o.key, label: o.label || o.sci }; found.show = 20; nearPanel(el); }));
+    } catch { box.innerHTML = `<p class="small muted">Couldn't search names just now.</p>`; }
+  };
+  foundResults(where);
+}
+
+async function foundResults(where) {
+  const out = $("#fresults"); if (!out) return;
+  const f = { ...found };
+  let filter = FILTER, taxa = [];
+  if (f.taxon) taxa = [f.taxon.key];
+  else if (f.group === "fossil") filter = "publishingCountry=GB&basisOfRecord=FOSSIL_SPECIMEN";
+  else if (f.group !== "all") { taxa = await groupKeys(f.group); if (!taxa.length) { out.innerHTML = `<p class="err">Couldn't set up that category just now.</p>`; return; } }
+  const k = JSON.stringify([here.lat, here.lng, f.group, f.taxon && f.taxon.key, f.radius, f.photos]);
+  if (!nearCache[k]) {
+    try {
+      const q = `${filter}${taxa.map((t) => `&taxonKey=${t}`).join("")}${f.photos ? "&mediaType=StillImage" : ""}&hasCoordinate=true&hasGeospatialIssue=false&geoDistance=${here.lat},${here.lng},${f.radius}km`;
+      const r = await getJSON(`${API}/occurrence/search?limit=300&${q}&facet=speciesKey&facetLimit=8`);
+      const pts = (r.results || []).filter((o) => typeof o.decimalLatitude === "number");
+      pts.forEach((o) => (o.d = haversineKm(here, { lat: o.decimalLatitude, lng: o.decimalLongitude })));
+      pts.sort((a, b) => a.d - b.d);
+      const top = ((((r.facets || [])[0]) || {}).counts || []).map((c) => ({ key: c.name, n: c.count }));
+      nearCache[k] = { total: r.count || 0, pts, top };
+    } catch { out.innerHTML = `<p class="err">Couldn't search near ${where} just now.</p>`; return; }
+  }
+  const d = nearCache[k], shown = d.pts.slice(0, f.show);
+  // names and museums for what's on screen
+  await pool([...shown, ...d.top.map((t) => ({ speciesKey: t.key, _top: t }))], 3, async (o) => {
+    if (o._top) {
+      if (!o._top.sci) { const p = d.pts.find((x) => String(x.speciesKey) === String(o.speciesKey)); o._top.sci = p ? p.species : ""; if (!o._top.sci) { try { o._top.sci = (await getJSON(`${API}/species/${o.speciesKey}`)).canonicalName || ""; } catch {} } }
+      o._top.name = o._top.name || (await commonName(o.speciesKey, o._top.sci)); return;
+    }
+    if (o._name === undefined) o._name = await commonName(o.speciesKey || o.taxonKey, o.species || o.scientificName);
+    if (!o._museum) o._museum = await museumOf(o);
+  });
+  if (!$("#fresults") || JSON.stringify([here.lat, here.lng, found.group, found.taxon && found.taxon.key, found.radius, found.photos]) !== k) return;
+  const what = f.taxon ? esc(f.taxon.label) : f.group === "all" ? "" : esc(CHIPS.find(([g]) => g === f.group)[1].toLowerCase()) + " ";
+  out.innerHTML = `<p class="rank"><b>${fmt(d.total)}</b> ${f.taxon ? `${what} specimens` : `${what}specimens`} in UK collections were found within ${f.radius} km of ${where}${f.photos ? " (with photos)" : ""}.</p>
+    ${!f.taxon && d.top.length ? `<h4>Most found nearby</h4><ol class="bars">${d.top.map((t, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://dissco-uk.org/specimen/search?taxonKey=${encodeURIComponent(t.key)}" target="_blank" rel="noopener">${esc(t.name || t.sci || "Unnamed")}</a>${t.name && t.sci ? `<small>${esc(t.sci)}</small>` : ""}</span><span class="ct">${fmt(t.n)}</span></li>`).join("")}</ol>` : ""}
+    ${shown.length ? `<h4>Found closest to ${where}</h4><ul class="flist">${shown.map((o) => {
+      const sci = o.species || o.scientificName || "", ph = photoOf(o);
+      return `<li><a class="fitem" href="https://www.gbif.org/occurrence/${encodeURIComponent(o.key)}" target="_blank" rel="noopener">
+        <span class="fthumb">${ph ? `<img src="${esc(thumbUrl(ph, 200))}" data-orig="${esc(ph.replace(/^http:/, "https:"))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="if(this.dataset.orig){this.src=this.dataset.orig;this.dataset.orig=''}else{this.remove()}">` : ""}</span>
+        <span class="fbody"><b>${esc(o._name || sci || "Unnamed specimen")}</b>${o._name && sci ? `<i class="sci">${esc(sci)}</i>` : ""}<small>${esc([placeOf(o), o.year, o._museum].filter(Boolean).join(" · "))}</small></span>
+        <span class="ct">${o.d < 1 ? "<1" : o.d.toFixed(1)} km</span></a></li>`; }).join("")}</ul>
+      ${d.pts.length > f.show ? `<button class="btn alt" type="button" id="fmore">Show more</button>` : ""}`
+    : `<p class="muted">Nothing with a map location was found. Try a wider distance${f.photos ? " or turn off 'only with photos'" : ""}.</p>`}`;
+  if ($("#fmore")) $("#fmore").onclick = () => { found.show += 20; foundResults(where); };
+  collectionsNear(where);
+}
+
+async function collectionsNear(where) {
+  const box = $("#fcolls"); if (!box || box.dataset.done) return;
+  box.dataset.done = "1";
+  const ck = `${here.lat},${here.lng}`;
+  if (!nearCache["colls" + ck]) {
+    try {
+      let colls = (await institutions()).map((i) => ({ ...i, d: haversineKm(here, i) })).sort((a, b) => a.d - b.d).slice(0, 12);
+      await pool(colls, 3, async (c) => { try { c.n = (await getJSON(`${API}/occurrence/search?limit=0&institutionKey=${c.key}&${FILTER}`)).count; } catch { c.n = 0; } });
+      nearCache["colls" + ck] = colls.filter((c) => c.n > 0).slice(0, 6);
+    } catch { nearCache["colls" + ck] = []; }
+  }
+  const colls = nearCache["colls" + ck];
+  if (!colls.length || !$("#fcolls")) return;
+  $("#fcolls").innerHTML = `<h3 style="font-size:20px;">Where to see specimens near ${where}</h3><p class="small muted">Collections holding UK specimens. Most are kept in stores, so check before visiting.</p>
+    <ol class="bars">${colls.map((c, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="${instLink(c.key)}" target="_blank" rel="noopener">${esc(c.name)}</a><small>${esc(c.city)}${c.city ? " · " : ""}${fmt(c.n)} specimens online</small></span><span class="ct">${c.d < 1 ? "<1" : c.d < 10 ? c.d.toFixed(1) : fmt(Math.round(c.d))} km</span></li>`).join("")}</ol>`;
 }
 
 /* ---------- learn ---------- */
