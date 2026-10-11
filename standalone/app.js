@@ -25,6 +25,79 @@ const catLink = (s) => (s && s.key ? `https://dissco-uk.org/specimen/search?taxo
 const INST_NAMES = { NHMUK: "the Natural History Museum, London", BMNH: "the Natural History Museum, London", K: "the Royal Botanic Gardens, Kew",
   E: "the Royal Botanic Garden Edinburgh", MANCH: "Manchester Museum", NMW: "Amgueddfa Cymru – Museum Wales", OUMNH: "Oxford University Museum of Natural History",
   NMS: "National Museums Scotland", LIV: "World Museum Liverpool", BGS: "the British Geological Survey", CAMZM: "the Museum of Zoology, Cambridge" };
+const placeOf = (o) => [o.locality, o.county || o.stateProvince, o.country === "United Kingdom of Great Britain and Northern Ireland" ? "UK" : o.country].filter(Boolean)
+  .map((x) => String(x).replace(/\s+/g, " ").trim()).filter((x, k, a) => x && a.indexOf(x) === k).join(", ").slice(0, 90);
+const museumCache = {};
+async function museumOf(o) {
+  let m = INST_NAMES[o.institutionCode] || museumCache[o.institutionKey] || "";
+  if (!m && o.institutionKey) { try { m = museumCache[o.institutionKey] = (await getJSON(`${API}/grscicoll/institution/${o.institutionKey}`)).name || ""; } catch {} }
+  return m || o.institutionCode || "a UK collection";
+}
+
+/* ---------- where am I? (for "nearest specimen") ---------- */
+// Rounded to 2 decimal places (about 1 km) before it is used or stored. Only ever sent to GBIF (and postcodes.io for a postcode).
+const round2 = (x) => Math.round(x * 100) / 100;
+let here = local.get("uks.here");
+function haversineKm(a, b) {
+  const R = 6371, r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+const kmText = (k) => (k < 1 ? "less than 1 km" : k < 10 ? `about ${k.toFixed(1)} km` : `about ${fmt(Math.round(k))} km`);
+// Shows "use my location / enter a postcode" in el and resolves with {lat, lng, label}
+function askWhere(el) {
+  if (here) return Promise.resolve(here);
+  return new Promise((resolve) => {
+    el.innerHTML = `<div class="where">
+      <button class="btn" type="button" data-w="gps">Use my location</button>
+      <form class="pc" data-w="pc"><input name="pc" placeholder="or a postcode, e.g. SK3 9" autocomplete="postal-code" maxlength="9" aria-label="Postcode"><button class="btn alt" type="submit">Go</button></form>
+      <p class="small muted">Rounded to about 1 km and kept on this phone. If the location button does nothing, open this page in Chrome.</p></div>`;
+    const done = (lat, lng, label) => { here = { lat: round2(lat), lng: round2(lng), label }; local.set("uks.here", here); resolve(here); };
+    el.querySelector('[data-w="gps"]').onclick = () => {
+      if (!navigator.geolocation) return toast("Location isn't available here. Try a postcode.");
+      toast("Finding you…");
+      navigator.geolocation.getCurrentPosition((p) => done(p.coords.latitude, p.coords.longitude, "your location"),
+        () => toast("Couldn't get your location. Try a postcode."), { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 });
+    };
+    el.querySelector("form").onsubmit = async (e) => {
+      e.preventDefault();
+      const pc = String(new FormData(e.target).get("pc") || "").trim().replace(/\s+/g, " ").toUpperCase();
+      if (pc.length < 2) return toast("Type a postcode");
+      for (const url of [`https://api.postcodes.io/postcodes/${encodeURIComponent(pc)}`, `https://api.postcodes.io/outcodes/${encodeURIComponent(pc.split(" ")[0])}`]) {
+        try { const r = await fetchJSON(url, { tries: 1 }); if (r && r.result && r.result.latitude) return done(r.result.latitude, r.result.longitude, pc); } catch {}
+      }
+      toast("Couldn't find that postcode");
+    };
+  });
+}
+function forgetWhere() { here = null; try { localStorage.removeItem("uks.here"); } catch {} }
+
+// The closest collected specimen of a species, searching outwards from the player.
+async function nearestOf(sp, at) {
+  const ck = `uks.near.${sp.key}.${at.lat},${at.lng}`, cached = local.get(ck);
+  if (cached) return cached.none ? null : cached;
+  for (const km of [5, 15, 40, 100, 250, 700]) {
+    const r = await getJSON(`${API}/occurrence/search?limit=300&taxonKey=${sp.key}&${FILTER}&hasCoordinate=true&hasGeospatialIssue=false&geoDistance=${at.lat},${at.lng},${km}km`);
+    const pts = (r.results || []).filter((o) => typeof o.decimalLatitude === "number");
+    if (pts.length) {
+      pts.forEach((o) => (o.d = haversineKm(at, { lat: o.decimalLatitude, lng: o.decimalLongitude })));
+      const o = pts.sort((a, b) => a.d - b.d)[0];
+      const rec = { d: o.d, year: o.year || null, place: placeOf(o), museum: await museumOf(o), key: o.key, within: r.count, km };
+      local.set(ck, rec); return rec;
+    }
+  }
+  local.set(ck, { none: true }); return null;
+}
+async function nearestBox(el, sp) {
+  el.innerHTML = `<span class="muted small">Searching outwards from you…</span>`;
+  try {
+    const n = await nearestOf(sp, here);
+    el.innerHTML = n
+      ? `<span>The nearest ${esc(sp.name.toLowerCase())} specimen was collected <b class="dist">${kmText(n.d)}</b> from ${here.label === "your location" ? "you" : esc(here.label)}${n.place ? `, in ${esc(n.place)}` : ""}${n.year ? `, in ${esc(n.year)}` : ""}. It's held by ${esc(n.museum)}. <a href="https://www.gbif.org/occurrence/${encodeURIComponent(n.key)}" target="_blank" rel="noopener">See the record</a></span>`
+      : `<span>No ${esc(sp.name.toLowerCase())} specimen in UK collections has a map location within 700 km of you.</span>`;
+  } catch { el.innerHTML = `<span class="muted small">Couldn't search just now. Try again in a moment.</span>`; }
+}
+
 async function exampleRecord(sp) {
   if (!sp || !sp.key) return null;
   const ck = `uks.ex.${puzzle}.${sp.key}`, cached = local.get(ck);
@@ -35,11 +108,7 @@ async function exampleRecord(sp) {
     const o = (r.results || []).find((x) => x.year && (x.locality || x.county || x.stateProvince || x.country)) || null;
     let rec = null;
     if (o) {
-      let museum = INST_NAMES[o.institutionCode] || "";
-      if (!museum && o.institutionKey) { try { museum = (await getJSON(`${API}/grscicoll/institution/${o.institutionKey}`)).name || ""; } catch {} }
-      const place = [o.locality, o.county || o.stateProvince, o.country === "United Kingdom of Great Britain and Northern Ireland" ? "UK" : o.country].filter(Boolean)
-        .map((x) => String(x).replace(/\s+/g, " ").trim()).filter((x, k, a) => x && a.indexOf(x) === k).join(", ").slice(0, 90);
-      rec = { year: o.year, place, museum: museum || o.institutionCode || "a UK collection", key: o.key };
+      rec = { year: o.year, place: placeOf(o), museum: await museumOf(o), key: o.key };
     }
     local.set(ck, rec || 0);
     return rec;
@@ -52,6 +121,9 @@ async function fillExample(el, sp) {
     ? `<b>From the catalogue</b><span>One of the ${fmt(sp.count)} ${esc(sp.name.toLowerCase())} specimens was collected ${r.place ? `in ${esc(r.place)} ` : ""}in ${esc(r.year)}, and is held by ${esc(r.museum)}. <a href="https://www.gbif.org/occurrence/${encodeURIComponent(r.key)}" target="_blank" rel="noopener">See the record</a></span>
        <a href="${esc(catLink(sp))}" target="_blank" rel="noopener">Browse all ${fmt(sp.count)} in the DiSSCo UK catalogue</a>`
     : `<a href="${esc(catLink(sp))}" target="_blank" rel="noopener">Browse all ${fmt(sp.count)} in the DiSSCo UK catalogue</a>`;
+  el.insertAdjacentHTML("beforeend", `<div class="near"><button class="btn alt small-btn" type="button">📍 Find the nearest one to me</button></div>`);
+  const box = el.querySelector(".near");
+  box.querySelector("button").onclick = async () => { await askWhere(box); nearestBox(box, sp); };
 }
 
 const recordsLink = (key) => `https://www.gbif.org/occurrence/search?taxon_key=${key}&publishing_country=GB&basis_of_record=PRESERVED_SPECIMEN&basis_of_record=FOSSIL_SPECIMEN&basis_of_record=MATERIAL_SAMPLE`;
@@ -148,7 +220,7 @@ function pairView({ label, pips, a, b, pending, nextLabel }) {
     ${bottom}</section>`;
   wireReports(app);
   const fc = $("#fromcat"); if (fc) fillExample(fc, b);
-  if (pending && pending.right && !pending.partied) { pending.partied = true; discoBurst(); }
+  if (pending && !pending.partied) { pending.partied = true; if (pending.right) discoBurst(); else if (discoOn()) music.sting(false); }
 }
 
 /* ---------- daily game ---------- */
@@ -238,7 +310,9 @@ function myHistory() {
 }
 function results() {
   const marks = prog.marks, score = marks.reduce((a, b) => a + b, 0), h = myHistory();
-  const msg = score >= 9 ? "Curator material." : score >= 7 ? "A sharp eye for the stores." : score >= 5 ? "Not bad at all." : "The drawers are full of surprises.";
+  const msg = discoOn()
+    ? (score >= 9 ? "King of the museum dance floor." : score >= 7 ? "Strutting through the stores." : score >= 5 ? "A steady shuffle." : "Back to the cloakroom, but the night is young.")
+    : score >= 9 ? "Curator material." : score >= 7 ? "A sharp eye for the stores." : score >= 5 ? "Not bad at all." : "The drawers are full of surprises.";
   app.innerHTML = `<section class="stack" style="gap:16px;">
     <p class="label">No. ${puzzle} · ${esc(puzzleDate(puzzle))}</p>
     <p class="big">${score}<small> / ${ROUNDS}</small></p>
@@ -332,6 +406,8 @@ async function exploreView() {
   const total = rows.reduce((t, s) => t + s.count, 0);
   app.innerHTML = `<section class="stack">
     <h1 class="title">Explore</h1>
+    <div class="nearme" id="nearme"></div>
+    <h2 style="font-size:24px;">Commonest to rarest</h2>
     <p>Every species in the game, from the most collected to the least, in UK collections.</p>
     <div class="chips" role="group" aria-label="Category">${CHIPS.map(([k, l]) =>
       `<button class="chip" type="button" data-ex="${k}" aria-pressed="${explore.group === k}">${k !== "all" ? `<i style="background:${GROUPS[k].hex}"></i>` : ""}${esc(l)}</button>`).join("")}</div>
@@ -344,6 +420,45 @@ async function exploreView() {
     <p class="small muted">"None" means no UK specimen records were found online for that name. The specimens may exist but not be online yet.</p>
   </section>`;
   app.querySelectorAll("[data-ex]").forEach((b) => (b.onclick = () => { explore.group = b.dataset.ex; exploreView(); }));
+  nearPanel($("#nearme"));
+}
+
+/* ---------- near you (in Explore) ---------- */
+const nearCache = {};
+async function nearPanel(el) {
+  if (!el) return;
+  const head = `<h2 style="font-size:24px;">Near you</h2>`;
+  if (!here) {
+    el.innerHTML = `${head}<p>What has been collected near you, and which specimens came from closest to home?</p><div id="nearask"></div>`;
+    await askWhere($("#nearask"));
+    return nearPanel(el);
+  }
+  const k = `${here.lat},${here.lng}`;
+  if (!nearCache[k]) {
+    el.innerHTML = `${head}<p class="muted">Looking around ${here.label === "your location" ? "you" : esc(here.label)}…</p>`;
+    try {
+      const geo = `&hasCoordinate=true&hasGeospatialIssue=false&geoDistance=${here.lat},${here.lng},10km`;
+      const [sum, recs] = await Promise.all([
+        getJSON(`${API}/occurrence/search?limit=0&${FILTER}${geo}&facet=speciesKey&facetLimit=8`),
+        getJSON(`${API}/occurrence/search?limit=300&${FILTER}${geo}`),
+      ]);
+      const pts = (recs.results || []).filter((o) => typeof o.decimalLatitude === "number");
+      pts.forEach((o) => (o.d = haversineKm(here, { lat: o.decimalLatitude, lng: o.decimalLongitude })));
+      const closest = pts.sort((a, b) => a.d - b.d).slice(0, 8);
+      const nameOf = {}; pts.forEach((o) => { if (o.speciesKey && !nameOf[o.speciesKey]) nameOf[o.speciesKey] = o.vernacularName || o.species; });
+      const facets = ((sum.facets || [])[0] || {}).counts || [];
+      await pool(facets.filter((f) => !nameOf[f.name]), 3, async (f) => { try { const t = await getJSON(`${API}/species/${f.name}`); nameOf[f.name] = t.vernacularName || t.canonicalName; } catch {} });
+      for (const o of closest) o.museum = await museumOf(o);
+      nearCache[k] = { total: sum.count || 0, top: facets.map((f) => ({ key: f.name, n: f.count, name: nameOf[f.name] || "Unknown species" })), closest };
+    } catch { el.innerHTML = `${head}<p class="err">Couldn't search near you just now.</p>`; return; }
+  }
+  const d = nearCache[k], where = here.label === "your location" ? "you" : esc(here.label);
+  el.innerHTML = `${head}
+    <p class="rank"><b>${fmt(d.total)}</b> specimens in UK collections were collected within 10 km of ${where}.</p>
+    ${d.top.length ? `<h3 style="font-size:18px;">Most collected nearby</h3><ol class="bars">${d.top.map((t, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://dissco-uk.org/specimen/search?taxonKey=${encodeURIComponent(t.key)}" target="_blank" rel="noopener">${esc(t.name)}</a></span><span class="ct">${fmt(t.n)}</span></li>`).join("")}</ol>` : ""}
+    ${d.closest.length ? `<h3 style="font-size:18px;">Collected closest to ${where}</h3><ol class="bars">${d.closest.map((o, n) => `<li><span class="rk">${n + 1}</span><span class="nm"><a href="https://www.gbif.org/occurrence/${encodeURIComponent(o.key)}" target="_blank" rel="noopener">${esc(o.vernacularName || o.species || o.scientificName || "Unnamed specimen")}</a><small>${esc([placeOf(o), o.year, o.museum].filter(Boolean).join(" · "))}</small></span><span class="ct">${o.d < 1 ? "<1" : o.d.toFixed(1)} km</span></li>`).join("")}</ol>` : `<p class="muted">No specimens with map locations were found within 10 km.</p>`}
+    <p class="small muted">Map locations on old specimens are often approximate, sometimes just the middle of a town or county. <button class="tiny" type="button" id="forget">Change or forget my location</button></p>`;
+  $("#forget").onclick = () => { forgetWhere(); nearPanel(el); };
 }
 
 /* ---------- learn ---------- */
@@ -380,33 +495,80 @@ function learnView() {
 
 /* ---------- DiSSCo mode ---------- */
 const discoOn = () => document.documentElement.classList.contains("disco");
-function setDisco(on) {
-  document.documentElement.classList.toggle("disco", on);
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+function setDisco(on, quiet) {
+  const root = document.documentElement;
+  if (on && !quiet && !calm()) { root.classList.add("disco-fading"); setTimeout(() => root.classList.remove("disco-fading"), 750); }
+  root.classList.toggle("disco", on);
   local.set("uks.disco", on);
-  const b = $("#discoBtn"); if (b) { b.setAttribute("aria-pressed", String(on)); b.querySelector("span").textContent = on ? "Lights up" : "DiSSCo mode"; }
-  let ball = $("#mirrorball");
-  if (on && !ball) {
-    ball = document.createElement("div"); ball.id = "mirrorball"; ball.setAttribute("aria-hidden", "true");
-    ball.innerHTML = `<i class="string"></i><i class="ball"></i>` + Array.from({ length: 6 }, (_, k) => `<i class="beam b${k}"></i>`).join("");
-    document.body.prepend(ball);
-    const floor = document.createElement("div"); floor.id = "dancefloor"; floor.setAttribute("aria-hidden", "true");
-    floor.innerHTML = Array.from({ length: 48 }, (_, k) => `<i style="animation-delay:${(-(k * 7) % 12) * 0.25}s"></i>`).join("");
-    document.body.append(floor);
-    toast("Let's dance");
+  const b = $("#discoBtn"); b.setAttribute("aria-pressed", String(on)); b.querySelector("span").textContent = on ? "Lights up" : "DiSSCo mode";
+  if (on && !$("#discofx")) {
+    const fx = document.createElement("div"); fx.id = "discofx"; fx.setAttribute("aria-hidden", "true");
+    const cols = ["#f37f94", "#00b49b", "#fff200", "#6450a1", "#f99d1b", "#87c540"];
+    fx.innerHTML = `<i class="wash w1"></i><i class="wash w2"></i><i class="wash w3"></i>
+      <i class="beam bm1"></i><i class="beam bm2"></i><i class="beam bm3"></i>
+      <div class="specks">${Array.from({ length: 70 }, (_, k) => `<i style="left:${(k * 37) % 100}%;top:${(k * 53) % 100}%;animation-delay:${((k * 7) % 8) * -0.25}s"></i>`).join("")}</div>
+      <div class="floor">${Array.from({ length: 48 }, (_, k) => `<i style="--c:${cols[(k * 5 + Math.floor(k / 12)) % cols.length]};--d:calc(var(--beat) * ${-((k * 7) % 16) / 4})"></i>`).join("")}</div>`;
+    document.body.prepend(fx);
+    const ball = document.createElement("div"); ball.id = "mirrorball"; ball.setAttribute("aria-hidden", "true");
+    ball.innerHTML = `<i class="string"></i><i class="ball"></i>`; document.body.prepend(ball);
+    if (!quiet) toast("Lights down. Tap ♪ for music.");
   }
-  if (!on) { $("#mirrorball")?.remove(); $("#dancefloor")?.remove(); }
+  if (!on) { $("#discofx")?.remove(); $("#mirrorball")?.remove(); music.stop(); }
 }
 function discoBurst() {
-  if (!discoOn() || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const cols = Object.values(GROUPS).map((g) => g.hex).concat(["#f9c1ce", "#fff200", "#00b49b", "#cc1236"]);
-  for (let k = 0; k < 40; k++) {
-    const c = document.createElement("i"); c.className = "confetti";
-    c.style.cssText = `left:${50 + (Math.random() - 0.5) * 30}vw;background:${cols[k % cols.length]};--dx:${(Math.random() - 0.5) * 120}vw;--dy:${-30 - Math.random() * 60}vh;--r:${Math.random() * 720}deg;animation-delay:${Math.random() * 0.15}s`;
-    document.body.append(c); setTimeout(() => c.remove(), 1800);
+  if (!discoOn() || calm()) return;
+  const cols = ["#f37f94", "#fff200", "#00b49b", "#b984af", "#f99d1b", "#87c540", "#ffffff"];
+  for (let k = 0; k < 60; k++) {
+    const c = document.createElement("i"); c.className = "confetti" + (k % 4 === 0 ? " star" : "");
+    c.style.cssText = `left:${50 + (Math.random() - 0.5) * 20}vw;background:${cols[k % cols.length]};--dx:${(Math.random() - 0.5) * 110}vw;--dy:${-25 - Math.random() * 65}vh;--r:${(Math.random() - 0.5) * 900}deg;animation-delay:${Math.random() * 0.12}s`;
+    document.body.append(c); setTimeout(() => c.remove(), 1900);
   }
+  music.sting(true);
 }
+
+// A small disco loop made on the phone with the Web Audio API: kick on every beat, open hi-hat on the off-beat,
+// clap on 2 and 4, and an octave-bouncing bass line. Nothing is downloaded. Off until the player taps Music.
+const music = (() => {
+  let ctx = null, timer = null, next = 0, step = 0, master = null;
+  const BPM = 118, SIX = 60 / BPM / 4, ROOTS = [45, 50, 43, 48]; // A, D, G, C (MIDI)
+  const hz = (m) => 440 * 2 ** ((m - 69) / 12);
+  let noiseBuf = null;
+  const noise = () => { if (!noiseBuf) { noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const s = ctx.createBufferSource(); s.buffer = noiseBuf; return s; };
+  function env(node, t, peak, len) { const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + len); node.connect(g); g.connect(master); return g; }
+  function kick(t) { const o = ctx.createOscillator(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); env(o, t, 0.9, 0.22); o.start(t); o.stop(t + 0.25); }
+  function hat(t, open) { const n = noise(), f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7000; n.connect(f); env(f, t, open ? 0.18 : 0.08, open ? 0.12 : 0.04); n.start(t); n.stop(t + 0.15); }
+  function clap(t) { const n = noise(), f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1500; n.connect(f); env(f, t, 0.35, 0.16); n.start(t); n.stop(t + 0.2); }
+  function bass(t, m) { const o = ctx.createOscillator(), f = ctx.createBiquadFilter(); o.type = "sawtooth"; o.frequency.value = hz(m); f.type = "lowpass"; f.frequency.value = 700; o.connect(f); env(f, t, 0.28, SIX * 1.7); o.start(t); o.stop(t + SIX * 2); }
+  function tick() {
+    while (next < ctx.currentTime + 0.12) {
+      const s16 = step % 16, root = ROOTS[Math.floor(step / 16) % 4];
+      if (s16 % 4 === 0) kick(next);
+      if (s16 % 4 === 2) hat(next, true); else if (s16 % 2 === 1) hat(next, false);
+      if (s16 === 4 || s16 === 12) clap(next);
+      if (s16 % 2 === 0) bass(next, root + (s16 % 4 === 2 ? 12 : 0));
+      next += SIX; step++;
+    }
+  }
+  return {
+    get on() { return !!timer; },
+    start() {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      ctx.resume(); master = master || ctx.createGain(); master.gain.value = 0.35; master.connect(ctx.destination);
+      next = ctx.currentTime + 0.05; step = 0; timer = setInterval(tick, 25);
+    },
+    stop() { clearInterval(timer); timer = null; const m = $("#musicBtn"); if (m) m.setAttribute("aria-pressed", "false"); },
+    sting(good) { // a little rising (or falling) flourish over the beat
+      if (!timer) return; const t = ctx.currentTime + 0.02;
+      (good ? [69, 73, 76, 81] : [64, 63, 62]).forEach((m, k) => { const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = hz(m); env(o, t + k * 0.07, 0.2, 0.18); o.start(t + k * 0.07); o.stop(t + k * 0.07 + 0.2); });
+    },
+  };
+})();
+$("#musicBtn").onclick = () => {
+  if (music.on) music.stop(); else { try { music.start(); $("#musicBtn").setAttribute("aria-pressed", "true"); } catch { toast("Music isn't available on this browser"); } }
+};
 $("#discoBtn").onclick = () => setDisco(!discoOn());
-if (local.get("uks.disco")) setDisco(true);
+if (local.get("uks.disco")) setDisco(true, true);
 
 /* ---------- tabs ---------- */
 /* ---------- photo check (for testing) ---------- */

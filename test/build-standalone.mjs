@@ -41,46 +41,90 @@ a.btn{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .gitem.pick[aria-pressed="true"]{outline:3px solid var(--good);}
 .gitem.pick[aria-pressed="true"] span::before{content:"✓ ";color:var(--good);}
 .fromcat{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--raised);font-size:15px;}
+.fromcat b.dist{text-transform:none;letter-spacing:0;font-size:inherit;color:var(--ink);}
 .fromcat b{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);}
+.where{display:flex;flex-direction:column;gap:8px;}
+.where .pc{display:flex;gap:8px;}
+.where input{flex:1;min-width:0;height:48px;border:1px solid var(--line-strong);border-radius:2px;background:var(--raised);color:var(--ink);font-size:17px;padding:0 12px;}
+.near{margin-top:4px;display:flex;flex-direction:column;gap:6px;}
+.small-btn{min-height:44px;font-size:15px;}
+.dist{font-family:var(--mono);}
+.nearme{display:flex;flex-direction:column;gap:10px;padding-bottom:6px;border-bottom:1px solid var(--line);}
 .discobtn{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border:1px solid var(--line-strong);border-radius:2px;background:var(--raised);color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;}
 .discobtn b{font-size:16px;}
 
 /* ===== DiSSCo mode: the one place the flat Wada style is allowed to go wild ===== */
-html.disco{--paper:#0c0718;--raised:rgba(30,18,52,.88);--sunk:#1a1030;--line:#4b2f7a;--line-strong:#b984af;--ink:#fffdf6;--ink-soft:#f5ecc2;--ink-muted:#ca92a8;--accent:#f37f94;--on-accent:#111314;--good:#87c540;--bad:#f58e84;--mark:#fff200;color-scheme:dark;}
-html.disco body{background:radial-gradient(circle at 20% 30%,rgba(243,127,148,.35),transparent 40%),radial-gradient(circle at 80% 20%,rgba(0,180,155,.30),transparent 40%),radial-gradient(circle at 50% 80%,rgba(255,242,0,.22),transparent 45%),#0c0718;background-size:200% 200%;animation:discoBg 8s ease-in-out infinite alternate;}
-@keyframes discoBg{0%{background-position:0% 0%}50%{background-position:100% 50%}100%{background-position:30% 100%}}
-html.disco h1,html.disco .title,html.disco .big{animation:discoHue 3s linear infinite;text-shadow:0 0 12px rgba(255,255,255,.35),0 0 30px rgba(243,127,148,.6);}
-html.disco .hero h1 em{background:#fff200;}
-@keyframes discoHue{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(360deg)}}
-html.disco .btn{box-shadow:0 0 18px rgba(243,127,148,.7);animation:discoPulse .5s ease-in-out infinite alternate;}
-html.disco .btn.alt{color:var(--ink);}
-@keyframes discoPulse{from{box-shadow:0 0 8px rgba(243,127,148,.5)}to{box-shadow:0 0 22px rgba(0,180,155,.9)}}
-html.disco .card{animation:discoBounce .5s ease-in-out infinite alternate;box-shadow:0 0 24px rgba(185,132,175,.35);}
-html.disco .card:nth-of-type(2){animation-delay:.25s;}
-@keyframes discoBounce{from{transform:translateY(0)}to{transform:translateY(-3px)}}
-html.disco .strip span{animation:discoHue 2s linear infinite;}
-html.disco .discobtn{background:#fff200;color:#111314;border-color:#fff200;}
-#mirrorball{position:absolute;top:0;left:max(50%, 220px);width:0;height:0;z-index:5;pointer-events:none;}
-#mirrorball .string{position:absolute;left:-1px;top:0;width:2px;height:10px;background:#d9d3bb;}
-#mirrorball .ball{position:absolute;left:-17px;top:8px;width:34px;height:34px;border-radius:50%;
-  background:repeating-linear-gradient(0deg,rgba(255,255,255,.9) 0 5px,rgba(120,120,140,.9) 5px 7px),repeating-linear-gradient(90deg,rgba(255,255,255,.4) 0 5px,rgba(40,40,60,.6) 5px 7px);
-  background-blend-mode:multiply;box-shadow:0 0 30px rgba(255,255,255,.7);animation:discoSpin 4s linear infinite;}
-@keyframes discoSpin{from{background-position:0 0,0 0}to{background-position:0 0,56px 0}}
-#mirrorball .beam{position:absolute;left:0;top:26px;width:3px;height:120vh;transform-origin:top center;opacity:.35;filter:blur(2px);animation:discoSweep 6s ease-in-out infinite alternate;}
-#mirrorball .b0{background:linear-gradient(#f37f94,transparent);--a:20deg;--b:60deg}
-#mirrorball .b1{background:linear-gradient(#00b49b,transparent);--a:35deg;--b:75deg;animation-delay:-1s}
-#mirrorball .b2{background:linear-gradient(#fff200,transparent);--a:10deg;--b:50deg;animation-delay:-2s}
-#mirrorball .b3{background:linear-gradient(#6450a1,transparent);--a:45deg;--b:85deg;animation-delay:-3s}
-#mirrorball .b4{background:linear-gradient(#f99d1b,transparent);--a:5deg;--b:40deg;animation-delay:-4s}
-#mirrorball .b5{background:linear-gradient(#87c540,transparent);--a:60deg;--b:25deg;animation-delay:-5s}
+/* one beat for everything: 118 bpm */
+html.disco{--beat:.508s;--paper:#0b0716;--raised:rgba(24,14,44,.82);--sunk:#160d2b;--line:#3d2766;--line-strong:#b984af;--ink:#fffdf6;--ink-soft:#f5ecc2;--ink-muted:#d4a6c2;--accent:#f37f94;--on-accent:#111314;--good:#9ee35b;--bad:#ff8f84;--mark:#fff200;color-scheme:dark;}
+html.disco body{background:#0b0716;transition:background .6s;}
+html.disco .wrap{position:relative;z-index:2;padding-top:62px;padding-bottom:120px;}
+html.disco-fading::after{content:"";position:fixed;inset:0;background:#000;z-index:50;pointer-events:none;animation:discoFade .7s ease-out forwards;}
+@keyframes discoFade{0%{opacity:1}100%{opacity:0}}
+/* light washes behind everything */
+#discofx{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
+#discofx .wash{position:absolute;width:90vmax;height:90vmax;border-radius:50%;filter:blur(60px);opacity:.38;mix-blend-mode:screen;animation:discoWash calc(var(--beat)*16) ease-in-out infinite alternate;}
+#discofx .w1{background:#f37f94;left:-30vmax;top:-20vmax}
+#discofx .w2{background:#00b49b;right:-35vmax;top:10vmax;animation-delay:calc(var(--beat)*-5)}
+#discofx .w3{background:#6450a1;left:-10vmax;bottom:-45vmax;animation-delay:calc(var(--beat)*-9)}
+@keyframes discoWash{0%{transform:translate(0,0) scale(1)}50%{transform:translate(12vmax,8vmax) scale(1.15)}100%{transform:translate(-8vmax,14vmax) scale(.9)}}
+/* mirror-ball reflections sweeping the room */
+#discofx .specks{position:absolute;left:50%;top:-20vh;width:220vmax;height:220vmax;margin-left:-110vmax;animation:discoTurn calc(var(--beat)*48) linear infinite;}
+#discofx .specks i{position:absolute;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 8px 2px rgba(255,255,255,.8);opacity:.75;animation:discoTwinkle calc(var(--beat)*2) ease-in-out infinite;}
+@keyframes discoTurn{to{transform:rotate(360deg)}}
+@keyframes discoTwinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:.9;transform:scale(1.2)}}
+/* spotlight beams */
+#discofx .beam{position:absolute;top:-10vh;width:22vw;height:140vh;transform-origin:50% 0;opacity:.16;filter:blur(6px);background:linear-gradient(to bottom,var(--c),transparent 80%);clip-path:polygon(45% 0,55% 0,100% 100%,0 100%);animation:discoSweep calc(var(--beat)*8) ease-in-out infinite alternate;}
+#discofx .bm1{left:5vw;--c:#f37f94;--a:-25deg;--b:20deg}
+#discofx .bm2{left:40vw;--c:#fff200;--a:18deg;--b:-22deg;animation-delay:calc(var(--beat)*-3)}
+#discofx .bm3{right:5vw;--c:#00b49b;--a:22deg;--b:-18deg;animation-delay:calc(var(--beat)*-6)}
 @keyframes discoSweep{from{transform:rotate(var(--a))}to{transform:rotate(var(--b))}}
-#dancefloor{position:fixed;left:0;right:0;bottom:0;height:16px;display:grid;grid-template-columns:repeat(24,1fr);grid-template-rows:1fr 1fr;z-index:4;pointer-events:none;opacity:.85;}
-#dancefloor i{animation:discoTile 3s steps(1) infinite;}
-@keyframes discoTile{0%{background:#f37f94}25%{background:#00b49b}50%{background:#fff200}75%{background:#6450a1}}
-html.disco .wrap{padding-bottom:64px;position:relative;z-index:1;}
-.confetti{position:fixed;top:55vh;width:9px;height:9px;z-index:20;pointer-events:none;animation:discoConfetti 1.6s cubic-bezier(.2,.6,.4,1) forwards;}
-@keyframes discoConfetti{to{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}
-@media (prefers-reduced-motion: reduce){html.disco *,html.disco body,#mirrorball *,#dancefloor i{animation:none!important;}}
+/* the dance floor, in perspective */
+#discofx .floor{position:absolute;left:-20%;right:-20%;bottom:-6px;height:150px;transform:perspective(320px) rotateX(58deg);transform-origin:50% 100%;display:grid;grid-template-columns:repeat(12,1fr);grid-template-rows:repeat(4,1fr);gap:3px;opacity:.9;-webkit-mask-image:linear-gradient(to top,#000 40%,transparent);mask-image:linear-gradient(to top,#000 40%,transparent);}
+#discofx .floor i{background:var(--c);opacity:.12;animation:discoTile calc(var(--beat)*4) steps(1) infinite;animation-delay:var(--d);box-shadow:0 0 18px var(--c);}
+@keyframes discoTile{0%{opacity:.9}25%{opacity:.1}50%{opacity:.5}75%{opacity:.1}}
+/* the ball itself, hanging in the header */
+#mirrorball{position:absolute;top:0;left:50%;width:0;height:0;z-index:6;pointer-events:none;}
+#mirrorball .string{position:absolute;left:-1px;top:0;width:2px;height:12px;background:linear-gradient(#aaa,#eee);}
+#mirrorball .ball{position:absolute;left:-21px;top:10px;width:42px;height:42px;border-radius:50%;overflow:hidden;
+  background:radial-gradient(circle at 35% 30%,#fff 0 8%,rgba(255,255,255,.2) 22%,transparent 45%),radial-gradient(circle at 50% 50%,#c9c3d6,#6c6680 75%,#3a3448);
+  box-shadow:0 0 18px rgba(255,255,255,.55),0 0 40px rgba(243,127,148,.35);animation:discoGlint calc(var(--beat)*2) ease-in-out infinite;}
+#mirrorball .ball::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:repeating-linear-gradient(90deg,transparent 0 4px,rgba(20,15,35,.55) 4px 5px),repeating-linear-gradient(0deg,transparent 0 4px,rgba(20,15,35,.55) 4px 5px);
+  animation:discoFacets calc(var(--beat)*8) linear infinite;}
+@keyframes discoFacets{to{background-position:40px 0,0 0}}
+@keyframes discoGlint{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
+/* type, buttons and cards */
+html.disco h1,html.disco .title,html.disco .big,html.disco .verdict b,html.disco .fb-title{background:linear-gradient(100deg,#fff200,#f37f94 30%,#b984af 55%,#00b49b 80%,#fff200);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:discoChrome calc(var(--beat)*8) linear infinite;}
+html.disco .verdict.bad b{background:linear-gradient(100deg,#ff8f84,#f37f94,#ff8f84);-webkit-background-clip:text;background-clip:text;}
+html.disco .hero h1 em{background:none;color:inherit;padding:0;}
+@keyframes discoChrome{to{background-position:250% 0}}
+html.disco .btn{background:transparent;color:#fffdf6;border:2px solid #f37f94;text-shadow:0 0 8px rgba(243,127,148,.9);box-shadow:0 0 14px rgba(243,127,148,.55),inset 0 0 10px rgba(243,127,148,.35);animation:discoNeon calc(var(--beat)*2) ease-in-out infinite;}
+html.disco .btn.alt{border-color:#00b49b;text-shadow:0 0 8px rgba(0,180,155,.9);box-shadow:0 0 14px rgba(0,180,155,.5),inset 0 0 10px rgba(0,180,155,.3);}
+html.disco .guess .btn:last-child{border-color:#00b49b;text-shadow:0 0 8px rgba(0,180,155,.9);box-shadow:0 0 14px rgba(0,180,155,.5),inset 0 0 10px rgba(0,180,155,.3);}
+@keyframes discoNeon{0%,100%{filter:brightness(1)}50%{filter:brightness(1.25)}}
+html.disco .card,html.disco .verdict,html.disco .fromcat,html.disco .rank,html.disco .note{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border-color:rgba(185,132,175,.45);}
+html.disco .card{box-shadow:0 0 0 1px rgba(255,255,255,.04),0 10px 40px rgba(0,0,0,.45);animation:discoBreathe calc(var(--beat)*2) ease-in-out infinite;}
+html.disco .card + .vs + .card{animation-delay:calc(var(--beat)*-1);}
+@keyframes discoBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+html.disco .label,html.disco .group{color:#ffd6e3;}
+html.disco .pips i.now{background:#fff200;box-shadow:0 0 8px #fff200;}
+html.disco .navtabs a[aria-selected="true"]{border-bottom-color:#fff200;text-shadow:0 0 10px rgba(255,242,0,.7);}
+html.disco .strip span{animation:discoTile calc(var(--beat)*4) steps(1) infinite;--c:currentColor;}
+html.disco .strip span:nth-child(odd){animation-delay:calc(var(--beat)*-2);}
+html.disco .discobtn,html.disco .musicbtn{background:#fff200;color:#111314;border-color:#fff200;box-shadow:0 0 14px rgba(255,242,0,.6);}
+.musicbtn{display:none;align-items:center;justify-content:center;min-height:40px;min-width:44px;padding:0 10px;font-size:18px!important;border:1px solid var(--line-strong);border-radius:2px;background:var(--raised);color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;}
+html.disco .musicbtn{display:inline-flex;}
+html.disco .musicbtn[aria-pressed="true"]{background:#f37f94;border-color:#f37f94;}
+.appbar .btns{display:flex;gap:6px;align-items:center;}
+/* moments */
+html.disco .verdict.good{animation:discoPop .4s cubic-bezier(.2,1.6,.4,1);}
+html.disco .verdict.bad{animation:discoScratch .45s linear;}
+@keyframes discoPop{0%{transform:scale(.85)}100%{transform:scale(1)}}
+@keyframes discoScratch{0%,100%{transform:none}20%{transform:translateX(-6px) skewX(-6deg)}40%{transform:translateX(5px) skewX(5deg)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+.confetti{position:fixed;top:58vh;width:8px;height:12px;border-radius:1px;z-index:40;pointer-events:none;animation:discoConfetti 1.7s cubic-bezier(.15,.7,.35,1) forwards;}
+.confetti.star{width:10px;height:10px;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);}
+@keyframes discoConfetti{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}
+@media (prefers-reduced-motion: reduce){html.disco *,html.disco *::before,#discofx *,#mirrorball *{animation:none!important;}#discofx .specks{display:none;}}
 .learn .lede{font-family:var(--serif);font-size:20px;color:var(--ink-soft);}
 </style>`;
 const base = page.slice(0, page.indexOf("<body>"));
@@ -95,7 +139,8 @@ const html = `${head}<body>
 <div class="wrap">
   <header class="appbar">
     <span class="brand"><span class="dots" id="dots" aria-hidden="true"></span>UK Specimens</span>
-    <button class="discobtn" id="discoBtn" type="button" aria-pressed="false"><b aria-hidden="true">🪩</b><span>DiSSCo mode</span></button>
+    <span class="btns"><button class="musicbtn" id="musicBtn" type="button" aria-pressed="false" aria-label="Disco music" title="Disco music">♪</button>
+    <button class="discobtn" id="discoBtn" type="button" aria-pressed="false"><b aria-hidden="true">🪩</b><span>DiSSCo mode</span></button></span>
   </header>
   <nav class="navtabs" id="tabs" role="tablist" aria-label="Sections"></nav>
   <main id="app" aria-live="polite"><p class="muted">Loading…</p></main>
